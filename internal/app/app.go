@@ -1,0 +1,923 @@
+package app
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+	"unicode"
+
+	"taskg/internal/styles"
+	"taskg/internal/taskmeta"
+	textinput "github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// Model: TaskModel represents the TUI state for browsing Taskfile tasks.
+
+// TaskModel is the refactored model focused on Taskfile tasks.
+type TaskModel struct {
+	tasks         []taskmeta.Task
+	filteredTasks []taskmeta.Task
+	selected      int
+	searchMode    bool
+	searchQuery   string
+	searchInput   textinput.Model
+	theme         styles.Theme
+	mouseEnabled  bool
+	width         int
+	height        int
+	lastCommand   string
+	statusMessage string
+	statusTimeout time.Time
+	projectName   string
+	projectRoot   string // for refresh functionality
+	errorMessage  string
+	// favorites placeholders
+	favorites       map[string]bool
+	quitAfterSelect bool
+	// tab scroll state
+	tabOffset int // index of first visible tab
+	// header indent (logo width + gap) used to align tabs under title
+	headerIndent int
+	// vertical scroll state
+	listOffset int
+	// cached dynamic measurements
+	itemHeight int // includes trailing spacing newline after each item
+	// tab-related state
+	tabs         []string          // list of tab names (prefixes + "main")
+	activeTab    string           // currently active tab name
+	tabTasks     map[string][]taskmeta.Task // tasks grouped by tab
+}
+
+
+type tickMsg time.Time
+
+
+// refreshMsg is sent when task refresh is complete
+type refreshMsg struct {
+	tasks []taskmeta.Task
+	err   error
+}
+
+func NewTaskModel(tasks []taskmeta.Task, themeName string, mouseEnabled bool, projectName string) TaskModel {
+	theme := styles.NewDarkTheme()
+	if themeName == "light" {
+		theme = styles.NewLightTheme()
+	}
+	m := TaskModel{
+		tasks:         tasks,
+		filteredTasks: tasks,
+		theme:         theme,
+		mouseEnabled:  mouseEnabled,
+		statusTimeout: time.Now(),
+		projectName:   projectName,
+		favorites:     make(map[string]bool),
+		tabTasks:      make(map[string][]taskmeta.Task),
+	}
+	ti := textinput.New()
+	ti.Placeholder = "Type to filter tasks"
+	ti.CharLimit = 128
+	ti.Width = 40
+	ti.Prompt = "🔍 "
+	m.searchInput = ti
+	m.buildTabs()  // Build tabs from tasks
+	m.updateFilter() // Apply initial filter
+	return m
+}
+
+// Error sets a persistent empty-state error message.
+func (m *TaskModel) Error(msg string) { m.errorMessage = msg }
+
+// SetProjectRoot sets the project root for refresh functionality
+func (m *TaskModel) SetProjectRoot(root string) { m.projectRoot = root }
+
+func (m TaskModel) Init() tea.Cmd { return tickCmd() }
+func tickCmd() tea.Cmd {
+	return tea.Tick(time.Millisecond*200, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+func (m *TaskModel) refreshCmd() tea.Cmd {
+	return func() tea.Msg {
+		if m.projectRoot == "" {
+			return refreshMsg{nil, fmt.Errorf("no project root set")}
+		}
+		tasks, err := taskmeta.DiscoverTasks(m.projectRoot)
+		return refreshMsg{tasks, err}
+	}
+}
+
+func (m TaskModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.ensureSelectionVisible()
+	case tea.KeyMsg:
+		return m.handleKeys(msg)
+	case tea.MouseMsg:
+		if !m.mouseEnabled {
+			return m, nil
+		}
+		return m.handleMouse(msg)
+	case tickMsg:
+		return m, tickCmd()
+	case refreshMsg:
+		if msg.err != nil {
+			m.setStatus(fmt.Sprintf("Refresh failed: %v", msg.err))
+		} else {
+			m.tasks = msg.tasks
+			m.buildTabs()  // Rebuild tabs after refresh
+			m.updateFilter()
+			m.setStatus(fmt.Sprintf("Refreshed - %d tasks found", len(msg.tasks)))
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *TaskModel) handleKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.searchMode {
+		var cmd tea.Cmd
+		m.searchInput, cmd = m.searchInput.Update(msg)
+		m.searchQuery = m.searchInput.Value()
+		m.updateFilter()
+		if msg.String() == "esc" {
+			m.searchMode = false
+			m.searchInput.Reset()
+			m.searchQuery = ""
+			m.updateFilter()
+		}
+		if msg.String() == "enter" {
+			m.searchMode = false
+			// If there are filtered tasks, execute the selected one
+			if len(m.filteredTasks) > 0 {
+				return *m, m.markForExecution()
+			}
+		}
+		return *m, cmd
+	}
+
+	// Auto-activate search mode when the user types a printable character
+	// that is not already a single-key command (navigation or quit).
+	// This enables "type-to-search" UX.
+	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+		r := msg.Runes[0]
+		// Reserved single-letter keys we don't want to hijack for search.
+		// q: quit, j/k: navigation, r: refresh.
+		if r != 'q' && r != 'j' && r != 'k' && r != 'r' && unicode.IsPrint(r) && !unicode.IsSpace(r) {
+			m.searchMode = true
+			m.searchInput.Focus()
+			m.searchInput.SetValue(string(r))
+			m.searchQuery = m.searchInput.Value()
+			m.updateFilter()
+			return *m, nil
+		}
+	}
+
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return *m, tea.Quit
+	case "r", "ctrl+r":
+		// Start refresh operation
+		m.setStatus("Refreshing tasks...")
+		return *m, m.refreshCmd()
+	case "up", "k":
+		if m.selected > 0 {
+			m.selected--
+			m.ensureSelectionVisible()
+		}
+	case "down", "j":
+		if m.selected < len(m.filteredTasks)-1 {
+			m.selected++
+			m.ensureSelectionVisible()
+		}
+	case "pgup":
+		step := m.visibleListHeight()
+		m.selected = max(0, m.selected-step)
+		m.ensureSelectionVisible()
+	case "pgdown":
+		step := m.visibleListHeight()
+		m.selected = min(len(m.filteredTasks)-1, m.selected+step)
+		m.ensureSelectionVisible()
+	case "home":
+		m.selected = 0
+		m.ensureSelectionVisible()
+	case "end":
+		m.selected = len(m.filteredTasks) - 1
+		m.ensureSelectionVisible()
+	case "enter":
+		return *m, m.markForExecution()
+	case "/":
+		m.searchMode = true
+		m.searchInput.Focus()
+		m.searchInput.SetValue("")
+		m.searchQuery = ""
+	case "esc":
+		if m.searchQuery != "" {
+			m.searchQuery = ""
+			m.updateFilter()
+		} else {
+			// If no search query to clear, quit the app
+			return *m, tea.Quit
+		}
+	case "tab":
+		// Move to next tab
+		if len(m.tabs) > 1 {
+			m.moveToNextTab()
+		}
+	case "shift+tab":
+		// Move to previous tab
+		if len(m.tabs) > 1 {
+			m.moveToPrevTab()
+		}
+	case "left":
+		// Move to previous tab
+		if len(m.tabs) > 1 {
+			m.moveToPrevTab()
+		}
+	case "right":
+		// Move to next tab
+		if len(m.tabs) > 1 {
+			m.moveToNextTab()
+		}
+	}
+	return *m, nil
+}
+
+// Legacy view handlers removed.
+
+func (m *TaskModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.MouseLeft:
+		// Check if click is on tabs (line 2, after header)
+		if msg.Y == 2 && len(m.tabs) > 1 {
+			// Calculate which tab was clicked
+			tabIndex := m.getTabIndexAtX(msg.X)
+			if tabIndex >= 0 && tabIndex < len(m.tabs) {
+				m.activeTab = m.tabs[tabIndex]
+				m.updateFilter()
+			}
+		} else if msg.Y >= 4 { // after header, tabs, and search (if present)
+			adjustY := msg.Y - 4
+			if m.searchMode || m.searchQuery != "" {
+				adjustY-- // Account for search box
+			}
+			if adjustY >= 0 && adjustY < len(m.filteredTasks) {
+				m.selected = adjustY
+			}
+		}
+	case tea.MouseLeft | tea.MouseMotion:
+		if msg.Y >= 4 {
+			adjustY := msg.Y - 4
+			if m.searchMode || m.searchQuery != "" {
+				adjustY--
+			}
+			if adjustY >= 0 && adjustY < len(m.filteredTasks) && adjustY == m.selected {
+				return *m, m.markForExecution()
+			}
+		}
+	}
+	return *m, nil
+}
+
+func (m *TaskModel) markForExecution() tea.Cmd {
+	if len(m.filteredTasks) == 0 {
+		return nil
+	}
+	task := m.filteredTasks[m.selected]
+	m.lastCommand = task.Name
+	m.quitAfterSelect = true
+	return tea.Quit
+}
+
+// Accessors used by main program after TUI exits.
+func (m TaskModel) ShouldRun() bool   { return m.quitAfterSelect && m.lastCommand != "" }
+func (m TaskModel) TaskToRun() string { return m.lastCommand }
+
+// (Removed legacy grouping functions & types)
+
+func (m *TaskModel) updateFilter() {
+	// Start with tasks from active tab
+	baseTasks := m.tabTasks[m.activeTab]
+	if baseTasks == nil {
+		baseTasks = []taskmeta.Task{}
+	}
+
+	if m.searchQuery == "" {
+		m.filteredTasks = baseTasks
+	} else {
+		q := strings.ToLower(m.searchQuery)
+		var res []taskmeta.Task
+		for _, t := range baseTasks {
+			hay := strings.ToLower(t.Name + " " + t.Desc + " " + strings.Join(t.Cmds, " "))
+			if strings.Contains(hay, q) {
+				res = append(res, t)
+			}
+		}
+		m.filteredTasks = res
+	}
+
+	if m.selected >= len(m.filteredTasks) {
+		m.selected = max(0, len(m.filteredTasks)-1)
+	}
+	m.ensureSelectionVisible()
+}
+
+// buildTabs organizes tasks into tabs based on their prefixes
+func (m *TaskModel) buildTabs() {
+	prefixMap := make(map[string][]taskmeta.Task)
+
+	for _, task := range m.tasks {
+		// Find prefix (everything before first hyphen)
+		parts := strings.SplitN(task.Name, "-", 2)
+		if len(parts) > 1 {
+			prefix := parts[0]
+			prefixMap[prefix] = append(prefixMap[prefix], task)
+		} else {
+			// Tasks without prefix go to "main" tab
+			prefixMap["main"] = append(prefixMap["main"], task)
+		}
+	}
+
+	// Build tab list - main first, then alphabetically sorted prefixes
+	m.tabs = []string{}
+	if tasks, exists := prefixMap["main"]; exists && len(tasks) > 0 {
+		m.tabs = append(m.tabs, "main")
+	}
+
+	var prefixes []string
+	for prefix := range prefixMap {
+		if prefix != "main" {
+			prefixes = append(prefixes, prefix)
+		}
+	}
+	sort.Strings(prefixes)
+	m.tabs = append(m.tabs, prefixes...)
+
+	// Copy tasks to tabTasks map
+	m.tabTasks = prefixMap
+
+	// Set default active tab
+	if len(m.tabs) > 0 {
+		m.activeTab = m.tabs[0]
+	} else {
+		m.activeTab = "main"
+		m.tabs = []string{"main"}
+		m.tabTasks["main"] = []taskmeta.Task{}
+	}
+}
+
+
+
+func (m *TaskModel) moveToNextTab() {
+	if len(m.tabs) <= 1 {
+		return
+	}
+
+	// (legacy tab state save removed)
+
+	// Find current tab index and move to next
+	currentIndex := -1
+	for i, tab := range m.tabs {
+		if tab == m.activeTab {
+			currentIndex = i
+			break
+		}
+	}
+
+	if currentIndex >= 0 {
+		nextIndex := (currentIndex + 1) % len(m.tabs)
+		m.activeTab = m.tabs[nextIndex]
+
+		// Adjust tab offset if needed to keep new tab visible
+		m.ensureTabVisible(nextIndex)
+	}
+
+	// (legacy tab state restore removed)
+	m.updateFilter()
+}
+
+func (m *TaskModel) moveToPrevTab() {
+	if len(m.tabs) <= 1 {
+		return
+	}
+
+	// (legacy tab state save removed)
+
+	// Find current tab index and move to previous
+	currentIndex := -1
+	for i, tab := range m.tabs {
+		if tab == m.activeTab {
+			currentIndex = i
+			break
+		}
+	}
+
+	if currentIndex >= 0 {
+		prevIndex := (currentIndex - 1 + len(m.tabs)) % len(m.tabs)
+		m.activeTab = m.tabs[prevIndex]
+
+		// Adjust tab offset if needed to keep new tab visible
+		m.ensureTabVisible(prevIndex)
+	}
+
+	// (legacy tab state restore removed)
+	m.updateFilter()
+}
+
+// (tab state persistence removed)
+
+func (m *TaskModel) ensureTabVisible(tabIndex int) {
+	if len(m.tabs) <= 1 {
+		return
+	}
+
+	// Calculate how many tabs can fit in current width
+	availableWidth := m.width - 14 // Leave space for borders and arrows
+	if availableWidth < 20 {
+		availableWidth = 20
+	}
+
+	visibleCount := 0
+	currentWidth := 0
+
+	for i := 0; i < len(m.tabs); i++ {
+		tab := m.tabs[i]
+		tabName := tab
+		if tab == "main" {
+			tabName = "Main"
+		} else {
+			tabName = m.titleCase(tab)
+		}
+
+		// Account for highlight bar and space (2 chars) + padding + margins
+		tabWidth := len(tabName) + 8 // highlight bar + space + padding + margins
+		if currentWidth + tabWidth > availableWidth {
+			break
+		}
+		currentWidth += tabWidth
+		visibleCount++
+	}
+
+	if visibleCount == 0 {
+		visibleCount = 1
+	}
+
+	// Adjust offset to make sure the target tab is visible
+	if tabIndex < m.tabOffset {
+		m.tabOffset = tabIndex
+	} else if tabIndex >= m.tabOffset + visibleCount {
+		m.tabOffset = tabIndex - visibleCount + 1
+	}
+
+	// Ensure offset is within valid range
+	maxOffset := len(m.tabs) - visibleCount
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if m.tabOffset > maxOffset {
+		m.tabOffset = maxOffset
+	}
+	if m.tabOffset < 0 {
+		m.tabOffset = 0
+	}
+}
+
+func (m *TaskModel) getTabIndexAtX(x int) int {
+	if len(m.tabs) <= 1 {
+		return -1
+	}
+
+	// Simple approximation - each tab takes about 10-15 characters
+	// This is a rough estimate, for precise clicking we'd need to track exact positions
+	// Start after border padding plus header indent so clicks map when tabs are indented under the title/logo.
+	pos := 2 + m.headerIndent
+	for i := m.tabOffset; i < len(m.tabs); i++ {
+		tab := m.tabs[i]
+		tabWidth := len(tab) + 8 // tab name + highlight bar + space + padding + margins
+		if x >= pos && x < pos+tabWidth {
+			return i
+		}
+		pos += tabWidth
+	}
+	return -1
+}
+
+func (m *TaskModel) setStatus(message string) {
+	m.statusMessage = message
+	m.statusTimeout = time.Now().Add(3 * time.Second)
+}
+
+// visibleListHeight calculates how many command boxes fit given current height.
+// Layout rows: 1 title + 1 tabs (if any) + 1 search (optional) + list + 1 status + 1 footer borders/padding already handled by container.
+func (m *TaskModel) visibleListHeight() int {
+	// Dynamically measure one item (including spacing newline) the first time.
+	if m.itemHeight == 0 {
+		m.itemHeight = m.measureItemHeight()
+		if m.itemHeight <= 0 {
+			m.itemHeight = 7
+		} // sane fallback
+	}
+
+	const (
+		containerOverhead = 4 // AppContainer border + padding vertical
+		headerHeight      = 2
+		tabsHeight        = 3
+		searchHeight      = 3
+		statusHeight      = 1
+		footerHeight      = 3
+	)
+	avail := m.height
+	if avail <= 0 {
+		avail = 24
+	}
+	inner := avail - containerOverhead
+	if inner < 10 {
+		inner = 10
+	}
+	overhead := headerHeight + statusHeight + footerHeight
+	// Add tabs height if we have multiple tabs
+	if len(m.tabs) > 1 {
+		overhead += tabsHeight
+	}
+	if m.searchMode || m.searchQuery != "" {
+		overhead += searchHeight
+	}
+	remaining := inner - overhead
+	if remaining < m.itemHeight {
+		return 1
+	}
+	items := remaining / m.itemHeight
+	if items < 1 {
+		items = 1
+	}
+	return items
+}
+
+// measureItemHeight renders a representative command box and counts lines.
+func (m *TaskModel) measureItemHeight() int {
+	// Need inner width similar to renderList
+	termWidth := m.width
+	if termWidth <= 0 {
+		termWidth = 100
+	}
+	// Determine container inner width dynamically from AppContainer frame size
+	appFrameW, _ := m.theme.AppContainer.GetFrameSize()
+	innerWidth := termWidth - appFrameW
+	if innerWidth < 40 {
+		innerWidth = 40
+	}
+	// sample multi-line format (task + commands)
+	sampleTask := "  • sample-task - Sample description"
+	sampleCmd := "    [echo hello | ls -la]"
+	sampleContent := sampleTask + "\n" + sampleCmd
+
+	style := m.theme.CommandBox
+	str := style.Copy().Width(innerWidth).Render(sampleContent)
+	// Add the spacing newline we append after every item in list rendering.
+	str += "\n"
+	lines := strings.Count(str, "\n")
+	return lines
+}
+
+// ensureSelectionVisible adjusts listOffset to keep selected index in viewport.
+func (m *TaskModel) ensureSelectionVisible() {
+	listHeight := m.visibleListHeight()
+	if m.selected < m.listOffset {
+		m.listOffset = m.selected
+	}
+	if m.selected >= m.listOffset+listHeight {
+		m.listOffset = m.selected - listHeight + 1
+	}
+	maxOffset := max(0, len(m.filteredTasks)-listHeight)
+	if m.listOffset > maxOffset {
+		m.listOffset = maxOffset
+	}
+	if m.listOffset < 0 {
+		m.listOffset = 0
+	}
+}
+
+func (m TaskModel) View() string { return m.renderList() }
+
+func (m TaskModel) renderTabs(width int) string {
+	if len(m.tabs) <= 1 {
+		return ""
+	}
+
+	var tabParts []string
+
+	// Add left arrow if we can scroll left
+	if m.tabOffset > 0 {
+		tabParts = append(tabParts, m.theme.TabArrow.Render("◀"))
+	}
+
+	// Calculate how many tabs we can fit
+	availableWidth := width - 10 // Leave some space for arrows and borders
+	currentWidth := 0
+	visibleTabs := 0
+
+	// First pass: determine how many tabs fit
+	for i := m.tabOffset; i < len(m.tabs); i++ {
+		tab := m.tabs[i]
+		tabName := tab
+		if tab == "main" {
+			tabName = "Main"
+		} else {
+			tabName = m.titleCase(tab)
+		}
+
+		// Account for highlight bar and space (2 chars) + padding + margins
+		tabWidth := len(tabName) + 8 // highlight bar + space + padding + margins
+		if currentWidth + tabWidth > availableWidth {
+			break
+		}
+		currentWidth += tabWidth
+		visibleTabs++
+	}
+
+	// Second pass: render visible tabs
+	for i := m.tabOffset; i < m.tabOffset + visibleTabs && i < len(m.tabs); i++ {
+		tab := m.tabs[i]
+		tabName := tab
+		if tab == "main" {
+			tabName = "Main"
+		} else {
+			tabName = m.titleCase(tab)
+		}
+
+		var style lipgloss.Style
+		if tab == m.activeTab {
+			style = m.theme.TabActive
+			// Add vertical bar highlight for active tab
+			highlightBar := m.theme.Highlight.Render("▎")
+			tabContent := highlightBar + " " + tabName
+			tabParts = append(tabParts, style.Render(tabContent))
+		} else {
+			style = m.theme.TabInactive
+			// Add spaces to align with active tab (bar + space = 2 chars)
+			tabContent := "  " + tabName
+			tabParts = append(tabParts, style.Render(tabContent))
+		}
+	}
+
+	// Add right arrow if we can scroll right
+	if m.tabOffset + visibleTabs < len(m.tabs) {
+		tabParts = append(tabParts, m.theme.TabArrow.Render("▶"))
+	}
+
+	tabsContent := strings.Join(tabParts, "")
+	return m.theme.TabsContainer.Copy().Width(width).Render(tabsContent)
+}
+
+func (m TaskModel) renderList() string {
+	var content strings.Builder
+
+	// Determine terminal width.
+	termWidth := int(float64(m.width) * 0.98)
+	if termWidth <= 0 {
+		termWidth = 98 // fallback
+	}
+
+	// Determine inner usable width inside AppContainer borders/padding.
+	appFrameW, _ := m.theme.AppContainer.GetFrameSize()
+	innerWidth := termWidth - appFrameW
+	if innerWidth < 40 { // sensible minimum
+		innerWidth = 40
+	}
+
+	// Refactored header: title on the left, logo on the far right (two lines).
+	proj := m.projectName
+	if proj == "" { proj = "(no Taskfile)" }
+	appTitle := "Task Runner Gui - taskg" // could append proj if desired
+	secondLine := "" // reserved for future help/hints
+
+	// Logo (2-line block glyph) now rendered at the right edge
+	logoLines := []string{"░▀░▀░  ", "░▄░▄░"}
+	logoStyledLines := make([]string, len(logoLines))
+	logoWidth := 0
+	for i, l := range logoLines {
+		logoStyledLines[i] = m.theme.Logo.Copy().Render(l)
+		if w := lipgloss.Width(l); w > logoWidth { logoWidth = w }
+	}
+
+	// Render title/help left; compute padding so logo aligns right.
+	// We ignore any previous left indent (logo moved to right) so tabs start at col 0.
+	m.headerIndent = 0
+
+	titleRendered := m.theme.AppTitle.Render(appTitle)
+	secondRendered := m.theme.Help.Render(secondLine)
+
+	space1 := innerWidth - lipgloss.Width(titleRendered) - logoWidth
+	if space1 < 1 { space1 = 1 }
+	space2 := innerWidth - lipgloss.Width(secondRendered) - logoWidth
+	if space2 < 1 { space2 = 1 }
+
+	firstLine := titleRendered + strings.Repeat(" ", space1) + logoStyledLines[0]
+	secondLineOut := secondRendered + strings.Repeat(" ", space2) + logoStyledLines[1]
+	content.WriteString(firstLine + "\n" + secondLineOut + "\n")
+
+	// Render tabs if we have multiple tabs. We indent them so the first tab aligns
+	// with the title (which starts after the logo). headerIndent is stored for
+	// mouse hit testing.
+	if len(m.tabs) > 1 {
+		// Header indent no longer needed (logo on right); keep 0 so first tab aligns with title start.
+		m.headerIndent = 0
+		content.WriteString(m.renderTabs(innerWidth) + "\n")
+	} else { m.headerIndent = 0 }
+
+	// Search
+	if m.searchMode {
+		box := m.theme.SearchBox.Copy()
+		content.WriteString(box.Width(innerWidth).Render(m.searchInput.View()) + "\n")
+	} else if m.searchQuery != "" {
+		info := fmt.Sprintf("🔍 %s  ( / edit  esc clear )", m.searchQuery)
+		box := m.theme.SearchBox.Copy()
+		content.WriteString(box.Width(innerWidth).Render(info) + "\n")
+	}
+
+	if len(m.filteredTasks) == 0 {
+		help := m.theme.Help.Copy()
+		content.WriteString(help.Width(innerWidth).Render("No tasks found") + "\n")
+	}
+	if len(m.filteredTasks) == 0 && m.errorMessage != "" {
+		errStyle := m.theme.Error.Copy()
+		content.WriteString(errStyle.Width(innerWidth).Render(m.errorMessage) + "\n")
+		help := m.theme.Help.Copy()
+		content.WriteString(help.Width(innerWidth).Render("Create a Taskfile.yml, e.g:\nversion: '3'\ntasks:\n  hello:\n    desc: Say hello\n    cmds:\n      - echo 'Hello from Task'") + "\n")
+	}
+
+	// Command list window with vertical scrolling
+	listHeight := m.visibleListHeight()
+	if listHeight < 1 {
+		listHeight = 1
+	}
+	// clamp listOffset in case of data shrink
+	maxOffset := max(0, len(m.filteredTasks)-listHeight)
+	if m.listOffset > maxOffset {
+		m.listOffset = maxOffset
+	}
+	end := min(len(m.filteredTasks), m.listOffset+listHeight)
+	for i := m.listOffset; i < end; i++ {
+		t := m.filteredTasks[i]
+		// Multi-line format: [indicator] task-name - description
+		//                    [indent] [command1 | command2 | ...]
+		var prefix string
+		var taskStyle lipgloss.Style
+		if i == m.selected {
+			bar := m.theme.Highlight.Render("▎")
+			dot := m.theme.Highlight.Render("•")
+			prefix = fmt.Sprintf("%s %s", bar, dot)
+			taskStyle = m.theme.Highlight
+		} else {
+			// Two spaces replace the bar + following space (bar + space == width 2)
+			dot := m.theme.Accent.Render("•")
+			prefix = fmt.Sprintf("  %s", dot)
+			taskStyle = m.theme.TaskName
+		}
+
+		// Format: task-name - description (if available)
+		taskText := taskStyle.Render(t.Name)
+		if t.Desc != "" && t.Desc != "-" {
+			// Do NOT accent the description when selected; only the name gets highlight.
+			descStyle := m.theme.Command
+			taskText += " - " + descStyle.Render(t.Desc)
+		}
+
+		// First line: task name and description
+		line := fmt.Sprintf("%s %s", prefix, taskText)
+
+		// Second line: commands (indented)
+		var cmdLine string
+		if len(t.Cmds) > 0 {
+			// Create indented prefix for commands
+			var cmdPrefix string
+			if i == m.selected {
+				cmdPrefix = "    " // 4 spaces to align under the task text
+			} else {
+				cmdPrefix = "    " // 4 spaces to align under the task text
+			}
+
+			// Format commands with separators. Keep same style whether selected or not so only task name pops.
+			cmdStyle := m.theme.Description
+
+			// Join commands with " | " separator and wrap in brackets
+			cmdText := "[" + strings.Join(t.Cmds, " | ") + "]"
+			cmdLine = cmdPrefix + cmdStyle.Render(cmdText)
+		}
+
+		// Combine both lines
+		var fullContent string
+		if cmdLine != "" {
+			fullContent = line + "\n" + cmdLine
+		} else {
+			fullContent = line
+		}
+
+		style := m.theme.CommandBox
+		if i == m.selected { style = m.theme.SelectedWire }
+		box := style.Copy()
+		content.WriteString(box.Width(innerWidth).Render(fullContent) + "\n")
+	}
+
+	// After changing spacing we must recompute itemHeight if theme changed sizes.
+	if m.itemHeight == 0 {
+		m.itemHeight = m.measureItemHeight()
+	}
+
+	// Status line (always reserve a line to avoid layout jump)
+	statusText := ""
+	if time.Now().Before(m.statusTimeout) && m.statusMessage != "" {
+		statusText = m.statusMessage
+	}
+	status := m.theme.Status.Copy()
+	content.WriteString(status.Width(innerWidth).Render(statusText) + "\n")
+
+	// Build footer parts with consistent layout
+	// Order: pager | move | tab switch | enter | search | refresh | quit
+	parts := []string{}
+
+	// Add page counter first (will be added at the end, but we'll reorder)
+	var pageCounter string
+	if len(m.filteredTasks) > 0 {
+		// Use fixed width formatting to prevent misalignment during navigation
+		maxItems := len(m.filteredTasks)
+		current := m.selected + 1
+		// Calculate width needed for largest possible numbers
+		maxWidth := len(fmt.Sprintf("%d/%d", maxItems, maxItems))
+		pageStr := fmt.Sprintf("%*s", maxWidth, fmt.Sprintf("%d/%d", current, maxItems))
+		pageCounter = m.theme.Highlight.Render(pageStr)
+		parts = append(parts, pageCounter)
+	}
+
+	// Add move
+	parts = append(parts, "↑↓ move")
+
+	// Add tab switch (if applicable)
+	if len(m.tabs) > 1 {
+		parts = append(parts, "←→/Tab switch")
+	}
+
+	// Add highlighted "Enter run"
+	enterRun := m.theme.Highlight.Render("Enter run")
+	parts = append(parts, enterRun)
+
+	// Add search
+	parts = append(parts, "/ search")
+
+	// Add refresh
+	parts = append(parts, "r/^R refresh")
+
+	// Add quit
+	parts = append(parts, "q quit")
+
+	// Ensure footer fits within width and doesn't overflow
+	separator := "  │  "
+	footerContent := strings.Join(parts, separator)
+
+	// Check if content would overflow and adjust if needed
+	footerWidth := lipgloss.Width(footerContent)
+	if footerWidth > innerWidth {
+		// If overflow, try shorter separator
+		separator = " │ "
+		footerContent = strings.Join(parts, separator)
+		footerWidth = lipgloss.Width(footerContent)
+
+		// If still overflows, truncate less important parts
+		if footerWidth > innerWidth && len(parts) > 4 {
+			// Remove the search hint if needed to fit
+			shortParts := parts[1:] // Remove "/ search"
+			footerContent = strings.Join(shortParts, separator)
+		}
+	}
+
+	footerBox := m.theme.FooterBox.Copy()
+	footer := footerBox.Width(innerWidth).Render(footerContent)
+	content.WriteString(footer)
+
+	// Final app container: set width then render
+	return m.theme.AppContainer.Copy().Width(termWidth).Render(content.String())
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func (m *TaskModel) titleCase(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + strings.ToLower(s[1:])
+}

@@ -1,0 +1,372 @@
+---
+# https://taskfile.dev
+
+version: '3'
+
+output: interleaved
+
+dotenv: ['.env', '{{.ENV}}/.env.', '{{.HOME}}/.env']
+
+env:
+  COMPOSE_IGNORE_ORPHANS: true
+
+vars:
+  COMPOSE_IGNORE_ORPHANS: true
+
+tasks:
+  pwd:
+    desc: Print working directory.
+    cmds:
+      - pwd
+    silent: true
+
+  docker-up:
+    desc: Run container
+    aliases: [start, up]
+    silent: true
+    cmds:
+      - task: success
+      - docker compose up -d
+
+  docker-pull:
+    desc: Run container
+    aliases: [pull]
+    silent: true
+    cmds:
+      - task: success
+      - docker compose pull
+
+  docker-update:
+    desc: Run container
+    aliases: [update]
+    silent: true
+    cmds:
+      - task: success
+      - docker compose pull
+      - docker compose up -d
+
+  docker-stop:
+    desc: Stop container
+    aliases: [stop]
+    silent: true
+    cmds:
+      - task: warning
+      - docker compose stop
+
+  docker-down:
+    desc: Docker compose down.
+    aliases: [down]
+    silent: true
+    cmds:
+      - task: warning
+      - docker compose down
+
+  docker-rebuild:
+    desc: Remove and run container
+    aliases: [rebuild]
+    silent: true
+    cmds:
+      - task: success
+      - docker compose down
+      - docker compose up -d
+
+  docker-destroy:
+    desc: Remove contanier and destroy
+    aliases: [destroy]
+    silent: true
+    prompt: "▍   This will destroy all data in volumes ... Do you want to continue?"
+    cmds:
+      - task: danger
+      - docker compose stop
+      - docker compose rm -f
+      - docker compose down -v
+      - echo
+
+  docker-build:
+    desc: Dockerfile build image
+    aliases: [build]
+    silent: true
+    cmds:
+      - task: success
+      - docker compose build
+
+  docker-watch:
+    desc: Edit Dockerfile and rebuild container'
+    aliases: [watch]
+    silent: true
+    cmds:
+      - task: success
+      - docker compose watch
+
+  docker-backup:
+    desc: Backup containers
+    aliases: [backup]
+    silent: true
+    cmds:
+      - task: success
+      - docker exec z-backup backup
+
+  docker-prune:
+    desc: Docker prune all
+    silent: true
+    aliases: [prune]
+    prompt: |
+      -  Remove all unused data (images, networks, volumes)
+      -  Do you want to continue?
+    cmds:
+      - task: danger
+      - docker image prune -af
+      - docker volume prune -f
+      - docker network prune -f
+
+  check:
+    internal: true
+    cmds:
+      - '[ ! -f "docker compose.yml" ] && exit 1 || exit 0'
+    silent: true
+
+  docker-ssh:
+    desc: ssh into containe.
+    aliases: [ssh]
+    deps: [check]
+    silent: true
+    vars:
+      SERVICE:
+        sh: yq -r '.services | keys[0]' docker compose.yml
+      NAME:
+        sh: yq -r ".services.{{.SERVICE}}.container_name" docker compose.yml
+      HASH:
+        sh:  docker container ls -q --filter "name={{.NAME}}"
+    cmds:
+      - docker exec -it {{.HASH}} /bin/bash ||
+        docker exec -it {{.HASH}} sh ||
+        docker exec -it {{.HASH}} ash ||
+        echo "No ssh access"
+
+  linux:
+    desc: '-'
+    cmds:
+      - task --list
+    silent: true
+
+  permissions:
+    desc: Fix file permissions.
+    aliases: [per]
+    silent: true
+    cmds:
+      - task: success
+      - sudo find . -type f -exec chmod 0664 {} +
+      - sudo find . -type d -exec chmod 0775 {} +
+      - sudo chown -hvR ${USER}:${USER} .
+
+
+
+  # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+  # Headers and helpers
+
+  success:
+    silent: true
+    cmds:
+      - echo -e "\n   \033[1;36m( ๑ ◠ ◡ ◠ ๑ )\033[0m\n"
+
+  warning:
+    silent: true
+    cmds:
+      - echo -e "\n   \033[1;33m( ๑ ◠ ﹏ ◠ ๑ )\033[0m\n"
+
+  danger:
+    silent: true
+    cmds:
+      - echo -e "\n   \033[1;31m( ๑ ◠ ﹏ ◠ ๑ )\033[0m\n"
+
+
+  # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+  # Main tab developer utilities (no hyphen in names)
+
+  build:
+    desc: Build the Go binary.
+    cmds:
+      - go build ./...
+
+  run:
+    desc: Run the application (default main package).
+    cmds:
+      - go run ./cmd/taskg
+
+  test:
+    desc: Run all tests verbosely.
+    cmds:
+      - go test -v ./...
+
+  lint:
+    desc: Basic go vet + staticcheck (if installed).
+    cmds:
+      - go vet ./...
+      - |
+        command -v staticcheck >/dev/null 2>&1 && staticcheck ./... || echo "staticcheck not installed"
+
+  fmt:
+    desc: Format source code.
+    cmds:
+      - go fmt ./...
+
+  vet:
+    desc: Run go vet.
+    cmds:
+      - go vet ./...
+
+  tidy:
+    desc: Ensure go.mod/go.sum are tidy.
+    cmds:
+      - go mod tidy
+
+  deps:
+    desc: List direct module dependencies.
+    cmds:
+      - go list -m -f '{{.Path}}@{{.Version}}' all | head -n 50
+
+  docs:
+    desc: Open module documentation in browser (if 'go doc -all' fails).
+    cmds:
+      - go list ./... | head -n 20
+
+  install:
+    desc: Install the binary to GOPATH/bin.
+    cmds:
+      - go install ./cmd/taskg
+
+  uninstall:
+    desc: Remove installed binary if present.
+    cmds:
+      - rm -f "$(go env GOPATH)/bin/taskg" || true
+
+  bench:
+    desc: Run benchmarks (short sample).
+    cmds:
+      - go test -bench=. -run=^$ ./... | head -n 30
+
+  coverage:
+    desc: Generate coverage report.
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -func=coverage.out | tail -n 10
+
+  modgraph:
+    desc: Show a condensed module dependency graph.
+    cmds:
+      - go mod graph | head -n 40
+
+  info:
+    desc: Print Go toolchain information.
+    cmds:
+      - go env | head -n 25
+
+
+  # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+  # Grouped tasks (appear in their own tabs via prefix before first '-')
+
+  git-status:
+    desc: Git status (short).
+    cmds:
+      - git status -sb || echo 'not a git repo'
+
+  git-log:
+    desc: Recent commits.
+    cmds:
+      - git --no-pager log --oneline -n 15 || echo 'not a git repo'
+
+  git-branches:
+    desc: List local branches.
+    cmds:
+      - git branch --color=always || echo 'not a git repo'
+
+  git-changes:
+    desc: Show staged & unstaged diff (summary).
+    cmds:
+      - git --no-pager diff --stat || echo 'not a git repo'
+
+  git-tag:
+    desc: List recent tags.
+    cmds:
+      - git --no-pager tag --sort=-creatordate | head -n 15 || echo 'not a git repo'
+
+  go-clean:
+    desc: Clean build / test caches.
+    cmds:
+      - go clean -cache -testcache
+
+  go-list:
+    desc: List packages (first 30).
+    cmds:
+      - go list ./... | head -n 30
+
+  go-env:
+    desc: Show important Go env vars.
+    cmds:
+      - go env GOMOD GOPATH GOROOT GOOS GOARCH
+
+  go-build-all:
+    desc: Build all packages (discard output).
+    cmds:
+      - go build ./...
+
+  go-mod-verify:
+    desc: Verify dependency integrity.
+    cmds:
+      - go mod verify
+
+  go-mod-download:
+    desc: Download modules.
+    cmds:
+      - go mod download
+
+  go-test-short:
+    desc: Run short tests only.
+    cmds:
+      - go test -short ./...
+
+  tools-install-deps:
+    desc: Install common dev tools (non-fatal if already installed).
+    cmds:
+      - |
+        go install golang.org/x/tools/cmd/stringer@latest 2>/dev/null || true
+      - |
+        go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest 2>/dev/null || true
+
+  tools-update:
+    desc: Update all project Go modules (tidy afterwards).
+    cmds:
+      - go get -u ./... || true
+      - go mod tidy
+
+  tools-check:
+    desc: Display versions of installed dev tools.
+    cmds:
+      - command -v golangci-lint >/dev/null && golangci-lint --version || echo 'golangci-lint not installed'
+      - command -v stringer >/dev/null && stringer --help | head -n 1 || echo 'stringer not installed'
+
+  cache-clear:
+    desc: Clear module & build caches (safe).
+    prompt: 'Clear Go build & module caches?'
+    cmds:
+      - go clean -cache -modcache
+
+  cache-size:
+    desc: Estimate Go module cache size.
+    cmds:
+      - du -sh "$(go env GOPATH)/pkg/mod" 2>/dev/null || echo 'N/A'
+
+  db-migrate:
+    desc: Placeholder database migrate.
+    cmds:
+      - echo 'Running migrations (placeholder)'
+
+  db-rollback:
+    desc: Placeholder database rollback.
+    cmds:
+      - echo 'Rolling back last migration (placeholder)'
+
+  db-status:
+    desc: Placeholder database status.
+    cmds:
+      - echo "Database status OK (placeholder)"

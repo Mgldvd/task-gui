@@ -1,0 +1,44 @@
+# Go build artifacts
+bin/
+cmd/taskg/taskg
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go module/vendor
+vendor/
+
+# Build cache / coverage
+*.coverprofile
+coverage.out
+
+# Logs & temp
+*.log
+*.tmp
+*.swp
+*.swo
+
+# IDE/editor
+.idea/
+.vscode/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Task / tooling outputs
+.task/
+.cache/
+
+# Node (if any future UI bits)
+node_modules/
+
+# Backup themes
+internal/styles/*.bak
+
+taskg

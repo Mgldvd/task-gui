@@ -1,0 +1,30 @@
+# <emoji> <type>(<scope>): <short title>
+
+# ---------------------
+# Commit Message Guide
+# ---------------------
+# Emoji + Type (required):
+#   ✨ feat(scope):     A new feature
+#   🐛 fix(scope):      A bug fix
+#   📝 docs(scope):     Documentation changes
+#   🎨 style(scope):    Code style (no logic changes)
+#   ♻️ refactor(scope): Refactoring without behavior changes
+#   ⚡ perf(scope):      Performance improvements
+#   ✅ test(scope):     Adding or updating tests
+#   🔧 chore(scope):    Maintenance tasks (build, CI, tooling, etc.)
+#   🚑 hotfix(scope):   Urgent production fixes
+#
+# Scope (required):
+#   The area/module impacted (e.g., auth, api, db, ui, payment).
+#
+# Title (required):
+#   Keep it concise, max 72 characters.
+#
+# Description (optional):
+#   Add details about what and why below, after a blank line.
+#
+# ---------------------
+# Example:
+# 🐛 fix(auth): handle null tokens
+#
+# Added null checks to prevent crashes when user tokens are missing.
