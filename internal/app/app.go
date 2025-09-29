@@ -335,10 +335,17 @@ func (m TaskModel) TaskToRun() string { return m.lastCommand }
 // (Removed legacy grouping functions & types)
 
 func (m *TaskModel) updateFilter() {
-	// Start with tasks from active tab
-	baseTasks := m.tabTasks[m.activeTab]
-	if baseTasks == nil {
-		baseTasks = []taskmeta.Task{}
+	// If there's a search query, run the search across all tasks (global
+	// search), otherwise show tasks for the currently active tab.
+	var baseTasks []taskmeta.Task
+	if m.searchQuery != "" {
+		// global search across all discovered tasks
+		baseTasks = m.tasks
+	} else {
+		baseTasks = m.tabTasks[m.activeTab]
+		if baseTasks == nil {
+			baseTasks = []taskmeta.Task{}
+		}
 	}
 
 	if m.searchQuery == "" {
