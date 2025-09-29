@@ -19,14 +19,14 @@ It discovers tasks (including those from includes/extends), lets you filter inst
 
 <div align="center">
 
-<img src="img/VibeCodeLogo.png" alt="ViceCodingLogo" width="300" />
+<img src="img/VibeCodeLogo.png" alt="VibeCodingLogo" width="300" />
 
-**A Vice Coding Project**
+**A Vibe Coding Project**
 
 </div>
 
 > ⚠️ **Notice**
-> This is a **Vice Coding** side project. Regular issue triage is not guaranteed. **Please open Issues only when accompanied by a Pull Request** (bug fix or improvement). I’m still learning and playing with GO; PR‑first keeps the project moving. All constructive contributions are welcome.
+> This is a **Vibe Coding** side project. Regular issue triage is not guaranteed. **Please open Issues only when accompanied by a Pull Request** (bug fix or improvement). I’m still learning and playing with GO; PR‑first keeps the project moving. All constructive contributions are welcome.
 
 
 ## Quick Features
