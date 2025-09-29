@@ -1,0 +1,14 @@
+version: '3'
+
+tasks:
+  hello:
+    desc: Test task that prints a message
+    cmds:
+      - echo "✓ Task execution successful!"
+      - echo "This task was selected in the GUI and executed automatically"
+
+  test-echo:
+    desc: Another simple test
+    cmds:
+      - echo "Test command executed from GUI"
+      - date

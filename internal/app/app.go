@@ -108,7 +108,7 @@ func (m *TaskModel) refreshCmd() tea.Cmd {
 	}
 }
 
-func (m TaskModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *TaskModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -148,31 +148,31 @@ func (m *TaskModel) handleKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.selected--
 				m.ensureSelectionVisible()
 			}
-			return *m, nil
+			return m, nil
 		case "down", "j":
 			if m.selected < len(m.filteredTasks)-1 {
 				m.selected++
 				m.ensureSelectionVisible()
 			}
-			return *m, nil
+			return m, nil
 		case "pgup":
 			step := m.visibleListHeight()
 			m.selected = max(0, m.selected-step)
 			m.ensureSelectionVisible()
-			return *m, nil
+			return m, nil
 		case "pgdown":
 			step := m.visibleListHeight()
 			m.selected = min(len(m.filteredTasks)-1, m.selected+step)
 			m.ensureSelectionVisible()
-			return *m, nil
+			return m, nil
 		case "home":
 			m.selected = 0
 			m.ensureSelectionVisible()
-			return *m, nil
+			return m, nil
 		case "end":
 			m.selected = len(m.filteredTasks) - 1
 			m.ensureSelectionVisible()
-			return *m, nil
+			return m, nil
 		}
 
 		var cmd tea.Cmd
@@ -189,10 +189,10 @@ func (m *TaskModel) handleKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.searchMode = false
 			// If there are filtered tasks, execute the selected one
 			if len(m.filteredTasks) > 0 {
-				return *m, m.markForExecution()
+				return m, m.markForExecution()
 			}
 		}
-		return *m, cmd
+		return m, cmd
 	}
 
 	// Auto-activate search mode when the user types a printable character
@@ -208,17 +208,17 @@ func (m *TaskModel) handleKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.searchInput.SetValue(string(r))
 			m.searchQuery = m.searchInput.Value()
 			m.updateFilter()
-			return *m, nil
+			return m, nil
 		}
 	}
 
 	switch msg.String() {
 	case "q", "ctrl+c":
-		return *m, tea.Quit
+		return m, tea.Quit
 	case "r", "ctrl+r":
 		// Start refresh operation
 		m.setStatus("Refreshing tasks...")
-		return *m, m.refreshCmd()
+		return m, m.refreshCmd()
 	case "up", "k":
 		if m.selected > 0 {
 			m.selected--
@@ -244,7 +244,7 @@ func (m *TaskModel) handleKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.selected = len(m.filteredTasks) - 1
 		m.ensureSelectionVisible()
 	case "enter":
-		return *m, m.markForExecution()
+		return m, m.markForExecution()
 	case "/":
 		m.searchMode = true
 		m.searchInput.Focus()
@@ -256,7 +256,7 @@ func (m *TaskModel) handleKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.updateFilter()
 		} else {
 			// If no search query to clear, quit the app
-			return *m, tea.Quit
+			return m, tea.Quit
 		}
 	case "tab":
 		// Move to next tab
@@ -279,7 +279,7 @@ func (m *TaskModel) handleKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.moveToNextTab()
 		}
 	}
-	return *m, nil
+	return m, nil
 }
 
 // Legacy view handlers removed.
@@ -311,11 +311,11 @@ func (m *TaskModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				adjustY--
 			}
 			if adjustY >= 0 && adjustY < len(m.filteredTasks) && adjustY == m.selected {
-				return *m, m.markForExecution()
+				return m, m.markForExecution()
 			}
 		}
 	}
-	return *m, nil
+	return m, nil
 }
 
 func (m *TaskModel) markForExecution() tea.Cmd {
