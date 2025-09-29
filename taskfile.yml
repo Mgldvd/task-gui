@@ -3,370 +3,526 @@
 
 version: '3'
 
-output: interleaved
-
-dotenv: ['.env', '{{.ENV}}/.env.', '{{.HOME}}/.env']
-
-env:
-  COMPOSE_IGNORE_ORPHANS: true
-
 vars:
-  COMPOSE_IGNORE_ORPHANS: true
+    APT_PKGS: "vim curl git"
+    APT_PKG: "htop"
+    SERVICE: "ssh"
+    DOCKER_COMPOSE_FILE: "docker-compose.yml"
+    DOCKER_SERVICE: "web"
+    CONTAINER: "my_container"
+    IMAGE: "ubuntu:22.04"
+    GIT_REPO: "https://github.com/git/git.git"
+    GIT_DIR: "$HOME/projects"
+    RSYNC_SRC: "$HOME/"
+    RSYNC_DEST: "/mnt/backup/home/"
+    BACKUP_ARCHIVE: "$HOME/backup_$(date +%F).tar.gz"
+    TARGET_HOST: "user@example.com"
+    TARGET_DIR: "/var/www/app"
+    SSH_PORT: "22"
+    UFW_PORT: "443"
+    UFW_SVC: "OpenSSH"
+    DISK_PATH: "/"
+    DU_PATH: "$HOME"
+    FIND_PATH: "$HOME"
+    FIND_SIZE: "+500M"
+    JOURNAL_UNIT: "ssh.service"
+    JOURNAL_SINCE: "today"
+    TIMEZONE: "UTC"
+    USERNAME: "deploy"
+    GROUPNAME: "sudo"
+    VENV_DIR: ".venv"
+    PY_REQ: "requirements.txt"
+    DOMAIN: "example.com"
+    PORT_CHECK: "443"
+    INTERFACE: "eth0"
+    MOUNT_POINT: "/"
+    JAIL_NAME: "sshd"
+    FLATPAK_APP: "org.mozilla.firefox"
+    SNAP_PKG: "lxd"
 
 tasks:
-  pwd:
-    desc: Print working directory.
-    cmds:
-      - pwd
-    silent: true
+    apt-update:
+        desc: Update APT package index
+        cmds:
+            - sudo apt-get update
 
-  docker-up:
-    desc: Run container
-    aliases: [start, up]
-    silent: true
-    cmds:
-      - task: success
-      - docker compose up -d
+    apt-upgrade:
+        desc: Upgrade installed packages safely
+        cmds:
+            - sudo apt-get upgrade -y
 
-  docker-pull:
-    desc: Run container
-    aliases: [pull]
-    silent: true
-    cmds:
-      - task: success
-      - docker compose pull
+    apt-dist-upgrade:
+        desc: Perform distribution upgrade with dependency changes
+        cmds:
+            - sudo apt-get dist-upgrade -y
 
-  docker-update:
-    desc: Run container
-    aliases: [update]
-    silent: true
-    cmds:
-      - task: success
-      - docker compose pull
-      - docker compose up -d
+    apt-autoremove:
+        desc: Remove unused packages and dependencies
+        cmds:
+            - sudo apt-get autoremove -y
 
-  docker-stop:
-    desc: Stop container
-    aliases: [stop]
-    silent: true
-    cmds:
-      - task: warning
-      - docker compose stop
+    apt-clean:
+        desc: Clean local APT repository of retrieved package files
+        cmds:
+            - sudo apt-get clean
 
-  docker-down:
-    desc: Docker compose down.
-    aliases: [down]
-    silent: true
-    cmds:
-      - task: warning
-      - docker compose down
+    apt-install:
+        desc: Install common productivity packages
+        cmds:
+            - sudo apt-get install -y {{.APT_PKGS}}
 
-  docker-rebuild:
-    desc: Remove and run container
-    aliases: [rebuild]
-    silent: true
-    cmds:
-      - task: success
-      - docker compose down
-      - docker compose up -d
+    apt-install-one:
+        desc: Install a single package
+        cmds:
+            - sudo apt-get install -y {{.APT_PKG}}
 
-  docker-destroy:
-    desc: Remove contanier and destroy
-    aliases: [destroy]
-    silent: true
-    prompt: "▍   This will destroy all data in volumes ... Do you want to continue?"
-    cmds:
-      - task: danger
-      - docker compose stop
-      - docker compose rm -f
-      - docker compose down -v
-      - echo
+    apt-purge-pkg:
+        desc: Purge a package and its config files
+        cmds:
+            - sudo apt-get purge -y {{.APT_PKG}}
 
-  docker-build:
-    desc: Dockerfile build image
-    aliases: [build]
-    silent: true
-    cmds:
-      - task: success
-      - docker compose build
+    apt-fix-broken:
+        desc: Fix broken dependencies
+        cmds:
+            - sudo apt-get -f install
 
-  docker-watch:
-    desc: Edit Dockerfile and rebuild container'
-    aliases: [watch]
-    silent: true
-    cmds:
-      - task: success
-      - docker compose watch
+    apt-list-upgradable:
+        desc: Show upgradable packages
+        cmds:
+            - apt list --upgradable
 
-  docker-backup:
-    desc: Backup containers
-    aliases: [backup]
-    silent: true
-    cmds:
-      - task: success
-      - docker exec z-backup backup
+    apt-hold:
+        desc: Hold a package at current version
+        cmds:
+            - sudo apt-mark hold {{.APT_PKG}}
 
-  docker-prune:
-    desc: Docker prune all
-    silent: true
-    aliases: [prune]
-    prompt: |
-      -  Remove all unused data (images, networks, volumes)
-      -  Do you want to continue?
-    cmds:
-      - task: danger
-      - docker image prune -af
-      - docker volume prune -f
-      - docker network prune -f
+    apt-unhold:
+        desc: Unhold a package to allow upgrades
+        cmds:
+            - sudo apt-mark unhold {{.APT_PKG}}
 
-  check:
-    internal: true
-    cmds:
-      - '[ ! -f "docker compose.yml" ] && exit 1 || exit 0'
-    silent: true
+    apt-add-ppa:
+        desc: Add a PPA repository
+        cmds:
+            - sudo add-apt-repository -y ppa:git-core/ppa && sudo apt-get update
 
-  docker-ssh:
-    desc: ssh into containe.
-    aliases: [ssh]
-    deps: [check]
-    silent: true
-    vars:
-      SERVICE:
-        sh: yq -r '.services | keys[0]' docker compose.yml
-      NAME:
-        sh: yq -r ".services.{{.SERVICE}}.container_name" docker compose.yml
-      HASH:
-        sh:  docker container ls -q --filter "name={{.NAME}}"
-    cmds:
-      - docker exec -it {{.HASH}} /bin/bash ||
-        docker exec -it {{.HASH}} sh ||
-        docker exec -it {{.HASH}} ash ||
-        echo "No ssh access"
+    system-daemon-reload:
+        desc: Reload systemd manager configuration
+        cmds:
+            - sudo systemctl daemon-reload
 
-  linux:
-    desc: '-'
-    cmds:
-      - task --list
-    silent: true
+    system-service-status:
+        desc: Show service status
+        cmds:
+            - systemctl status {{.SERVICE}} --no-pager
 
-  permissions:
-    desc: Fix file permissions.
-    aliases: [per]
-    silent: true
-    cmds:
-      - task: success
-      - sudo find . -type f -exec chmod 0664 {} +
-      - sudo find . -type d -exec chmod 0775 {} +
-      - sudo chown -hvR ${USER}:${USER} .
+    system-service-restart:
+        desc: Restart a service
+        cmds:
+            - sudo systemctl restart {{.SERVICE}}
 
+    system-service-enable:
+        desc: Enable a service at boot
+        cmds:
+            - sudo systemctl enable {{.SERVICE}}
 
+    system-service-disable:
+        desc: Disable a service at boot
+        cmds:
+            - sudo systemctl disable {{.SERVICE}}
 
-  # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-  # Headers and helpers
+    system-list-failed:
+        desc: List failed systemd units
+        cmds:
+            - systemctl --failed
 
-  success:
-    silent: true
-    cmds:
-      - echo -e "\n   \033[1;36m( ๑ ◠ ◡ ◠ ๑ )\033[0m\n"
+    logs-journal-unit:
+        desc: Tail logs for a systemd unit
+        cmds:
+            - sudo journalctl -u {{.JOURNAL_UNIT}} -f
 
-  warning:
-    silent: true
-    cmds:
-      - echo -e "\n   \033[1;33m( ๑ ◠ ﹏ ◠ ๑ )\033[0m\n"
+    logs-journal-since:
+        desc: Show logs since a specific time
+        cmds:
+            - sudo journalctl --since "{{.JOURNAL_SINCE}}" --no-pager
 
-  danger:
-    silent: true
-    cmds:
-      - echo -e "\n   \033[1;31m( ๑ ◠ ﹏ ◠ ๑ )\033[0m\n"
+    logs-journal-priority:
+        desc: Show warnings and errors from the system journal
+        cmds:
+            - sudo journalctl -p warning --no-pager
 
+    docker-ps:
+        desc: List running containers
+        cmds:
+            - docker ps
 
-  # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-  # Main tab developer utilities (no hyphen in names)
+    docker-images-prune:
+        desc: Remove dangling images
+        cmds:
+            - docker image prune -f
 
-  build:
-    desc: Build the Go binary.
-    cmds:
-      - go build ./...
+    docker-system-prune:
+        desc: Remove unused data (containers, networks, images)
+        cmds:
+            - docker system prune -af --volumes
 
-  run:
-    desc: Run the application (default main package).
-    cmds:
-      - go run ./cmd/taskg
+    docker-compose-up:
+        desc: Start services with Docker Compose
+        cmds:
+            - docker compose -f {{.DOCKER_COMPOSE_FILE}} up -d
 
-  test:
-    desc: Run all tests verbosely.
-    cmds:
-      - go test -v ./...
+    docker-compose-down:
+        desc: Stop and remove Docker Compose resources
+        cmds:
+            - docker compose -f {{.DOCKER_COMPOSE_FILE}} down
 
-  lint:
-    desc: Basic go vet + staticcheck (if installed).
-    cmds:
-      - go vet ./...
-      - |
-        command -v staticcheck >/dev/null 2>&1 && staticcheck ./... || echo "staticcheck not installed"
+    docker-pull-service:
+        desc: Pull latest image for a service
+        cmds:
+            - docker compose -f {{.DOCKER_COMPOSE_FILE}} pull {{.DOCKER_SERVICE}}
 
-  fmt:
-    desc: Format source code.
-    cmds:
-      - go fmt ./...
+    docker-logs-service:
+        desc: Tail logs for a service
+        cmds:
+            - docker compose -f {{.DOCKER_COMPOSE_FILE}} logs -f {{.DOCKER_SERVICE}}
 
-  vet:
-    desc: Run go vet.
-    cmds:
-      - go vet ./...
+    docker-exec-shell:
+        desc: Exec into a running container
+        cmds:
+            - docker exec -it {{.CONTAINER}} bash
 
-  tidy:
-    desc: Ensure go.mod/go.sum are tidy.
-    cmds:
-      - go mod tidy
+    docker-prune-volumes:
+        desc: Remove dangling volumes
+        cmds:
+            - docker volume prune -f
 
-  deps:
-    desc: List direct module dependencies.
-    cmds:
-      - go list -m -f '{{.Path}}@{{.Version}}' all | head -n 50
+    docker-run-temp:
+        desc: Run a temporary container for diagnostics
+        cmds:
+            - docker run --rm -it {{.IMAGE}} bash -lc "apt-get update && apt-get install -y curl && curl -I https://{{.DOMAIN}}"
 
-  docs:
-    desc: Open module documentation in browser (if 'go doc -all' fails).
-    cmds:
-      - go list ./... | head -n 20
+    podman-ps:
+        desc: List running Podman containers
+        cmds:
+            - podman ps || true
 
-  install:
-    desc: Install the binary to GOPATH/bin.
-    cmds:
-      - go install ./cmd/taskg
+    git-clone:
+        desc: Clone a repository into a workspace
+        cmds:
+            - mkdir -p {{.GIT_DIR}} && cd {{.GIT_DIR}} && git clone {{.GIT_REPO}}
 
-  uninstall:
-    desc: Remove installed binary if present.
-    cmds:
-      - rm -f "$(go env GOPATH)/bin/taskg" || true
+    git-pull-all:
+        desc: Pull latest changes for all repos in a directory
+        cmds:
+            - |
+                find {{.GIT_DIR}} -maxdepth 1 -type d -exec sh -c 'cd "$1" && [ -d .git ] && git pull --ff-only || true' _ {} \;
 
-  bench:
-    desc: Run benchmarks (short sample).
-    cmds:
-      - go test -bench=. -run=^$ ./... | head -n 30
+    git-fetch-prune:
+        desc: Fetch and prune stale branches
+        cmds:
+            - git fetch --all --prune
 
-  coverage:
-    desc: Generate coverage report.
-    cmds:
-      - go test -coverprofile=coverage.out ./...
-      - go tool cover -func=coverage.out | tail -n 10
+    git-gc:
+        desc: Optimize local repository
+        cmds:
+            - git gc --aggressive --prune=now
 
-  modgraph:
-    desc: Show a condensed module dependency graph.
-    cmds:
-      - go mod graph | head -n 40
+    git-clean-dry:
+        desc: Preview removal of untracked files
+        cmds:
+            - git clean -ndx
 
-  info:
-    desc: Print Go toolchain information.
-    cmds:
-      - go env | head -n 25
+    net-interfaces:
+        desc: Show IP addresses and links
+        cmds:
+            - ip -brief address
 
+    net-sockets:
+        desc: List listening sockets with processes
+        cmds:
+            - sudo ss -tulpn
 
-  # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-  # Grouped tasks (appear in their own tabs via prefix before first '-')
+    net-dns-lookup:
+        desc: Resolve A and AAAA records
+        cmds:
+            - dig +short {{.DOMAIN}} A; dig +short {{.DOMAIN}} AAAA
 
-  git-status:
-    desc: Git status (short).
-    cmds:
-      - git status -sb || echo 'not a git repo'
+    net-traceroute:
+        desc: Trace route to a host
+        cmds:
+            - traceroute {{.DOMAIN}} || mtr -rw {{.DOMAIN}} || true
 
-  git-log:
-    desc: Recent commits.
-    cmds:
-      - git --no-pager log --oneline -n 15 || echo 'not a git repo'
+    net-port-check:
+        desc: Check TCP port connectivity
+        cmds:
+            - nc -vz {{.DOMAIN}} {{.PORT_CHECK}} || true
 
-  git-branches:
-    desc: List local branches.
-    cmds:
-      - git branch --color=always || echo 'not a git repo'
+    net-curl-headers:
+        desc: Fetch HTTP response headers
+        cmds:
+            - curl -I https://{{.DOMAIN}}
 
-  git-changes:
-    desc: Show staged & unstaged diff (summary).
-    cmds:
-      - git --no-pager diff --stat || echo 'not a git repo'
+    net-speedtest:
+        desc: Run speed test if utility exists
+        cmds:
+            - command -v speedtest && speedtest || echo "speedtest not installed"
 
-  git-tag:
-    desc: List recent tags.
-    cmds:
-      - git --no-pager tag --sort=-creatordate | head -n 15 || echo 'not a git repo'
+    disk-usage-df:
+        desc: Show filesystem disk usage
+        cmds:
+            - df -hT
 
-  go-clean:
-    desc: Clean build / test caches.
-    cmds:
-      - go clean -cache -testcache
+    disk-usage-du:
+        desc: Summarize directory sizes
+        cmds:
+            - du -xh --max-depth=1 {{.DU_PATH}} | sort -h
 
-  go-list:
-    desc: List packages (first 30).
-    cmds:
-      - go list ./... | head -n 30
+    disk-lsblk:
+        desc: List block devices
+        cmds:
+            - lsblk -o NAME,FSTYPE,SIZE,TYPE,MOUNTPOINT
 
-  go-env:
-    desc: Show important Go env vars.
-    cmds:
-      - go env GOMOD GOPATH GOROOT GOOS GOARCH
+    disk-smart-health:
+        desc: Check SMART health for all disks
+        cmds:
+            - sudo bash -lc 'for d in /dev/sd? /dev/nvme?n1 2>/dev/null; do smartctl -H "$d" || true; done'
 
-  go-build-all:
-    desc: Build all packages (discard output).
-    cmds:
-      - go build ./...
+    disk-trim:
+        desc: Manually TRIM mounted filesystems that support it
+        cmds:
+            - sudo fstrim -av
 
-  go-mod-verify:
-    desc: Verify dependency integrity.
-    cmds:
-      - go mod verify
+    disk-open-deleted:
+        desc: Show processes holding deleted files
+        cmds:
+            - sudo lsof | grep '(deleted)' || true
 
-  go-mod-download:
-    desc: Download modules.
-    cmds:
-      - go mod download
+    disk-find-large:
+        desc: Find large files
+        cmds:
+            - sudo find {{.FIND_PATH}} -xdev -type f -size {{.FIND_SIZE}} -printf "%s %p\n" | sort -nr | head -50
 
-  go-test-short:
-    desc: Run short tests only.
-    cmds:
-      - go test -short ./...
+    backup-rsync-push:
+        desc: Push incremental backup with rsync
+        cmds:
+            - rsync -aAXH --delete --info=progress2 {{.RSYNC_SRC}} {{.RSYNC_DEST}}
 
-  tools-install-deps:
-    desc: Install common dev tools (non-fatal if already installed).
-    cmds:
-      - |
-        go install golang.org/x/tools/cmd/stringer@latest 2>/dev/null || true
-      - |
-        go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest 2>/dev/null || true
+    backup-tar-create:
+        desc: Create compressed backup archive
+        cmds:
+            - tar -czf {{.BACKUP_ARCHIVE}} --exclude={{.BACKUP_ARCHIVE}} {{.RSYNC_SRC}}
 
-  tools-update:
-    desc: Update all project Go modules (tidy afterwards).
-    cmds:
-      - go get -u ./... || true
-      - go mod tidy
+    backup-tar-verify:
+        desc: Verify archive integrity
+        cmds:
+            - gzip -t {{.BACKUP_ARCHIVE}} && echo "OK"
 
-  tools-check:
-    desc: Display versions of installed dev tools.
-    cmds:
-      - command -v golangci-lint >/dev/null && golangci-lint --version || echo 'golangci-lint not installed'
-      - command -v stringer >/dev/null && stringer --help | head -n 1 || echo 'stringer not installed'
+    ssh-keygen-ed25519:
+        desc: Generate an Ed25519 SSH key
+        cmds:
+            - ssh-keygen -t ed25519 -a 100 -f "$HOME/.ssh/id_ed25519" -N ""
 
-  cache-clear:
-    desc: Clear module & build caches (safe).
-    prompt: 'Clear Go build & module caches?'
-    cmds:
-      - go clean -cache -modcache
+    ssh-copy-id:
+        desc: Copy SSH public key to remote host
+        cmds:
+            - ssh-copy-id -p {{.SSH_PORT}} {{.TARGET_HOST}}
 
-  cache-size:
-    desc: Estimate Go module cache size.
-    cmds:
-      - du -sh "$(go env GOPATH)/pkg/mod" 2>/dev/null || echo 'N/A'
+    ssh-test-conn:
+        desc: Test SSH connectivity and host key
+        cmds:
+            - ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -p {{.SSH_PORT}} {{.TARGET_HOST}} true
 
-  db-migrate:
-    desc: Placeholder database migrate.
-    cmds:
-      - echo 'Running migrations (placeholder)'
+    transfer-scp:
+        desc: Copy directory to remote host
+        cmds:
+            - scp -P {{.SSH_PORT}} -r {{.DU_PATH}} {{.TARGET_HOST}}:{{.TARGET_DIR}}
 
-  db-rollback:
-    desc: Placeholder database rollback.
-    cmds:
-      - echo 'Rolling back last migration (placeholder)'
+    time-status:
+        desc: Show time sync status
+        cmds:
+            - timedatectl status
 
-  db-status:
-    desc: Placeholder database status.
-    cmds:
-      - echo "Database status OK (placeholder)"
+    time-set-timezone:
+        desc: Set system timezone
+        cmds:
+            - sudo timedatectl set-timezone {{.TIMEZONE}} && timedatectl
+
+    user-add:
+        desc: Create a new user with home and bash shell
+        cmds:
+            - sudo useradd -m -s /bin/bash {{.USERNAME}}
+
+    user-passwd:
+        desc: Set or change user password
+        cmds:
+            - echo "{{.USERNAME}}:$(openssl rand -base64 16)" | sudo chpasswd
+
+    user-add-sudo:
+        desc: Add user to sudo group
+        cmds:
+            - sudo usermod -aG {{.GROUPNAME}} {{.USERNAME}}
+
+    user-lock:
+        desc: Lock a user account
+        cmds:
+            - sudo usermod -L {{.USERNAME}}
+
+    user-unlock:
+        desc: Unlock a user account
+        cmds:
+            - sudo usermod -U {{.USERNAME}}
+
+    security-ufw-enable:
+        desc: Enable UFW and allow SSH
+        cmds:
+            - sudo ufw allow "{{.UFW_SVC}}"
+            - sudo ufw --force enable
+            - sudo ufw status verbose
+
+    security-ufw-allow-port:
+        desc: Allow a TCP port
+        cmds:
+            - sudo ufw allow {{.UFW_PORT}}/tcp && sudo ufw status numbered
+
+    security-ufw-deny-port:
+        desc: Deny a TCP port
+        cmds:
+            - sudo ufw deny {{.UFW_PORT}}/tcp && sudo ufw status numbered
+
+    security-fail2ban-status:
+        desc: Show Fail2Ban jail status
+        cmds:
+            - sudo fail2ban-client status {{.JAIL_NAME}} || sudo fail2ban-client status || true
+
+    openssl-cert-inspect:
+        desc: Inspect remote TLS certificate
+        cmds:
+            - |
+                echo | openssl s_client -servername {{.DOMAIN}} -connect {{.DOMAIN}}:443 2>/dev/null | openssl x509 -noout -issuer -subject -dates -fingerprint -sha256
+
+    proc-top-cpu:
+        desc: Show top processes by CPU usage
+        cmds:
+            - ps -eo pid,ppid,cmd,%cpu,%mem --sort=-%cpu | head -20
+
+    proc-top-mem:
+        desc: Show top processes by memory usage
+        cmds:
+            - ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%mem | head -20
+
+    proc-renice-highcpu:
+        desc: Lower priority of top CPU consumer
+        cmds:
+            - sudo bash -lc 'pid=$(ps -eo pid,%cpu --sort=-%cpu | awk "NR==2{print \$1}") && [ -n "$pid" ] && renice +10 -p "$pid"'
+
+    proc-kill-by-name:
+        desc: Kill processes by name
+        cmds:
+            - sudo pkill -f "{{.SERVICE}}" || true
+
+    sysinfo-quick:
+        desc: Quick system overview
+        cmds:
+            - uname -a
+            - lsb_release -a || cat /etc/os-release
+            - uptime
+            - free -h
+            - vmstat 1 5
+            - iostat -xz 1 3 || true
+
+    net-firewall-list:
+        desc: List firewall rules
+        cmds:
+            - sudo ufw status numbered || sudo iptables -S || true
+
+    net-nmcli-summary:
+        desc: NetworkManager summary
+        cmds:
+            - nmcli general status || true
+            - nmcli device status || true
+
+    mounts-list:
+        desc: List mounts with filesystem types
+        cmds:
+            - findmnt -t ext4,ext3,xfs,btrfs
+
+    mounts-lsof:
+        desc: Show open files on a mountpoint
+        cmds:
+            - sudo lsof +f -- {{.MOUNT_POINT}} | head -50
+
+    venv-create:
+        desc: Create Python virtual environment
+        cmds:
+            - python3 -m venv {{.VENV_DIR}}
+
+    venv-upgrade-pip:
+        desc: Upgrade pip in venv
+        cmds:
+            - . {{.VENV_DIR}}/bin/activate && pip install --upgrade pip
+
+    venv-install-reqs:
+        desc: Install requirements in venv
+        cmds:
+            - . {{.VENV_DIR}}/bin/activate && [ -f "{{.PY_REQ}}" ] && pip install -r {{.PY_REQ}} || true
+
+    snap-refresh:
+        desc: Refresh all snaps
+        cmds:
+            - sudo snap refresh
+
+    snap-list:
+        desc: List installed snaps
+        cmds:
+            - snap list
+
+    snap-remove:
+        desc: Remove a snap package
+        cmds:
+            - sudo snap remove {{.SNAP_PKG}} || true
+
+    flatpak-update:
+        desc: Update all Flatpak apps
+        cmds:
+            - flatpak update -y || true
+
+    flatpak-uninstall-unused:
+        desc: Uninstall unused Flatpak refs
+        cmds:
+            - flatpak uninstall --unused -y || true
+
+    flatpak-run-app:
+        desc: Run a Flatpak app if installed
+        cmds:
+            - flatpak run {{.FLATPAK_APP}} || true
+
+    cleanup-thumbnails:
+        desc: Clean GNOME thumbnail cache
+        cmds:
+            - rm -rf "$HOME/.cache/thumbnails/"*
+
+    locale-reconfigure:
+        desc: Reconfigure locales non-interactively
+        cmds:
+            - sudo update-locale LANG=en_US.UTF-8 && locale
+
+    kernel-unattended-upgrades:
+        desc: Ensure unattended upgrades are enabled
+        cmds:
+            - sudo apt-get install -y unattended-upgrades && sudo dpkg-reconfigure -f noninteractive unattended-upgrades
+
+    cron-list:
+        desc: List user and system cron jobs
+        cmds:
+            - crontab -l || true
+            - sudo ls -l /etc/cron.d /etc/cron.daily /etc/cron.hourly /etc/cron.weekly /etc/cron.monthly
+
+    hostnamectl-set:
+        desc: Set system hostname
+        cmds:
+            - sudo hostnamectl set-hostname {{.DOMAIN}} && hostnamectl
+
+    sysctl-reload:
+        desc: Reload sysctl settings
+        cmds:
+            - sudo sysctl --system

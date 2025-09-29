@@ -898,7 +898,26 @@ func (m TaskModel) renderList() string {
 	content.WriteString(footer)
 
 	// Final app container: set width then render
-	return m.theme.AppContainer.Copy().Width(termWidth).Render(content.String())
+	finalRender := m.theme.AppContainer.Copy().Width(termWidth).Render(content.String())
+
+	// Ensure we never emit more lines than the terminal height. This keeps
+	// the header at the top of the viewport and prevents the terminal from
+	// scrolling the header out of view when the item list grows large or when
+	// switching tabs which can change the rendered height.
+	// If m.height is not known (0) or too small, fall back to returning the
+	// whole render so Bubble Tea can manage it, but prefer trimming when
+	// possible.
+	if m.height > 0 {
+		lines := strings.Split(finalRender, "\n")
+		// If rendered lines exceed terminal height, keep only the top lines
+		// so the header remains visible.
+		if len(lines) > m.height {
+			lines = lines[:m.height]
+			finalRender = strings.Join(lines, "\n")
+		}
+	}
+
+	return finalRender
 }
 
 func max(a, b int) int {
