@@ -19,6 +19,7 @@ import (
 // TaskModel is the refactored model focused on Taskfile tasks.
 type TaskModel struct {
 	tasks         []taskmeta.Task
+	originalTasks []taskmeta.Task // to preserve original order
 	filteredTasks []taskmeta.Task
 	selected      int
 	searchMode    bool
@@ -49,6 +50,7 @@ type TaskModel struct {
 	tabs         []string          // list of tab names (prefixes + "main")
 	activeTab    string           // currently active tab name
 	tabTasks     map[string][]taskmeta.Task // tasks grouped by tab
+	sortMode     string           // "file" or "alpha"
 }
 
 
@@ -72,8 +74,13 @@ func NewTaskModel(tasks []taskmeta.Task, themeName string, mouseEnabled bool, pr
 		return tasks[i].Line < tasks[j].Line
 	})
 
+	// Make a copy of the original tasks to restore sorting
+	originalTasks := make([]taskmeta.Task, len(tasks))
+	copy(originalTasks, tasks)
+
 	m := &TaskModel{
 		tasks:         tasks,
+		originalTasks: originalTasks,
 		filteredTasks: tasks,
 		theme:         theme,
 		mouseEnabled:  mouseEnabled,
@@ -81,6 +88,7 @@ func NewTaskModel(tasks []taskmeta.Task, themeName string, mouseEnabled bool, pr
 		projectName:   projectName,
 		favorites:     make(map[string]bool),
 		tabTasks:      make(map[string][]taskmeta.Task),
+		sortMode:      "file", // default to file order
 	}
 	ti := textinput.New()
 	ti.Placeholder = "Type to filter tasks"
@@ -219,6 +227,10 @@ func (m *TaskModel) handleKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
+	case "ctrl+s":
+		m.toggleSortMode()
+		m.setStatus(fmt.Sprintf("Sorted by %s", m.sortMode))
+		return m, nil
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "r", "ctrl+r":
@@ -334,6 +346,34 @@ func (m *TaskModel) markForExecution() tea.Cmd {
 	return tea.Quit
 }
 
+func (m *TaskModel) toggleSortMode() {
+	// Preserve selection
+	var selectedTaskName string
+	if len(m.filteredTasks) > 0 && m.selected >= 0 && m.selected < len(m.filteredTasks) {
+		selectedTaskName = m.filteredTasks[m.selected].Name
+	}
+
+	if m.sortMode == "file" {
+		m.sortMode = "alpha"
+	} else {
+		m.sortMode = "file"
+	}
+
+	m.buildTabs()
+	m.updateFilter()
+
+	// Restore selection
+	if selectedTaskName != "" {
+		for i, t := range m.filteredTasks {
+			if t.Name == selectedTaskName {
+				m.selected = i
+				break
+			}
+		}
+	}
+	m.ensureSelectionVisible()
+}
+
 // Accessors used by main program after TUI exits.
 func (m TaskModel) ShouldRun() bool   { return m.quitAfterSelect && m.lastCommand != "" }
 func (m TaskModel) TaskToRun() string { return m.lastCommand }
@@ -374,49 +414,75 @@ func (m *TaskModel) updateFilter() {
 	m.ensureSelectionVisible()
 }
 
-// buildTabs organizes tasks into tabs based on their prefixes
 func (m *TaskModel) buildTabs() {
 	prefixMap := make(map[string][]taskmeta.Task)
 	var prefixes []string
 	prefixSet := make(map[string]bool)
 
-	// First, add "main" tab if there are any tasks without a prefix
-	hasMain := false
-	for _, task := range m.tasks {
-		if !strings.Contains(task.Name, "-") {
-			hasMain = true
+	// Use originalTasks to ensure file order is always the base
+	tasksToProcess := m.originalTasks
+
+	for _, task := range tasksToProcess {
+		var prefix string
+		parts := strings.SplitN(task.Name, "-", 2)
+		if len(parts) > 1 {
+			prefix = parts[0]
+		} else {
+			prefix = "main"
+		}
+
+		if !prefixSet[prefix] {
+			prefixes = append(prefixes, prefix)
+			prefixSet[prefix] = true
+		}
+		prefixMap[prefix] = append(prefixMap[prefix], task)
+	}
+
+	// Sort tasks within each tab
+	for _, tasks := range prefixMap {
+		if m.sortMode == "alpha" {
+			sort.SliceStable(tasks, func(i, j int) bool {
+				return tasks[i].Name < tasks[j].Name
+			})
+		} else { // "file"
+			sort.SliceStable(tasks, func(i, j int) bool {
+				return tasks[i].Line < tasks[j].Line
+			})
+		}
+	}
+
+	// Sort tabs if in alpha mode, but keep "main" first
+	if m.sortMode == "alpha" {
+		sort.Strings(prefixes)
+	}
+
+	// Ensure "main" tab is always first if it exists
+	mainIndex := -1
+	for i, p := range prefixes {
+		if p == "main" {
+			mainIndex = i
 			break
 		}
 	}
-	if hasMain {
-		prefixes = append(prefixes, "main")
-		prefixSet["main"] = true
-	}
-
-	for _, task := range m.tasks {
-		parts := strings.SplitN(task.Name, "-", 2)
-		if len(parts) > 1 {
-			prefix := parts[0]
-			if !prefixSet[prefix] {
-				prefixes = append(prefixes, prefix)
-				prefixSet[prefix] = true
-			}
-			prefixMap[prefix] = append(prefixMap[prefix], task)
-		} else {
-			prefixMap["main"] = append(prefixMap["main"], task)
-		}
+	if mainIndex > 0 { // if main is not already at the start
+		mainPrefix := prefixes[mainIndex]
+		prefixes = append(prefixes[:mainIndex], prefixes[mainIndex+1:]...)
+		prefixes = append([]string{mainPrefix}, prefixes...)
 	}
 
 	m.tabs = prefixes
 	m.tabTasks = prefixMap
 
-	// Set default active tab
-	if len(m.tabs) > 0 {
+	// Ensure active tab is still valid
+	foundActive := false
+	for _, t := range m.tabs {
+		if t == m.activeTab {
+			foundActive = true
+			break
+		}
+	}
+	if !foundActive && len(m.tabs) > 0 {
 		m.activeTab = m.tabs[0]
-	} else {
-		m.activeTab = "main"
-		m.tabs = []string{"main"}
-		m.tabTasks["main"] = []taskmeta.Task{}
 	}
 }
 
@@ -938,6 +1004,15 @@ func (m TaskModel) renderList() string {
 
 	// Add refresh
 	parts = append(parts, "r/^R refresh")
+
+	// Add sort mode indicator
+	var sortIndicator string
+	if m.sortMode == "alpha" {
+		sortIndicator = "Sort: A→Z (^S)"
+	} else {
+		sortIndicator = "Sort: Original (^S)"
+	}
+	parts = append(parts, sortIndicator)
 
 	// Add quit
 	parts = append(parts, "q quit")
