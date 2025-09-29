@@ -139,6 +139,42 @@ func (m TaskModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *TaskModel) handleKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.searchMode {
+		// Handle navigation keys while in search mode so arrow keys still move
+		// the selection. If it's not a navigation key, pass it to the text
+		// input component for normal editing.
+		switch msg.String() {
+		case "up", "k":
+			if m.selected > 0 {
+				m.selected--
+				m.ensureSelectionVisible()
+			}
+			return *m, nil
+		case "down", "j":
+			if m.selected < len(m.filteredTasks)-1 {
+				m.selected++
+				m.ensureSelectionVisible()
+			}
+			return *m, nil
+		case "pgup":
+			step := m.visibleListHeight()
+			m.selected = max(0, m.selected-step)
+			m.ensureSelectionVisible()
+			return *m, nil
+		case "pgdown":
+			step := m.visibleListHeight()
+			m.selected = min(len(m.filteredTasks)-1, m.selected+step)
+			m.ensureSelectionVisible()
+			return *m, nil
+		case "home":
+			m.selected = 0
+			m.ensureSelectionVisible()
+			return *m, nil
+		case "end":
+			m.selected = len(m.filteredTasks) - 1
+			m.ensureSelectionVisible()
+			return *m, nil
+		}
+
 		var cmd tea.Cmd
 		m.searchInput, cmd = m.searchInput.Update(msg)
 		m.searchQuery = m.searchInput.Value()
