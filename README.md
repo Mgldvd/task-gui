@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="img/logo.png" alt="VibeCode" width="240" />
+<img src="img/logo.png" alt="Task Runner GUI" width="240" />
 
 # Task Runner GUI (taskg)
 
@@ -19,15 +19,14 @@ It discovers tasks (including those from includes/extends), lets you filter inst
 
 <div align="center">
 
-**A VibeCode Project**
+<img src="img/VibeCodeLogo.png" alt="ViceCodingLogo" width="300" />
 
-<img src="img/VibeCodeLogo.png" alt="# Task Runner GUI (taskg)
-" width="300" />
+**A Vice Coding Project**
 
 </div>
 
 > ⚠️ **Notice**
-> This is a **VibeCode** side project. Regular issue triage is not guaranteed. **Please open Issues only when accompanied by a Pull Request** (bug fix or improvement). I’m still learning and playing with GO; PR‑first keeps the project moving. All constructive contributions are welcome.
+> This is a **Vice Coding** side project. Regular issue triage is not guaranteed. **Please open Issues only when accompanied by a Pull Request** (bug fix or improvement). I’m still learning and playing with GO; PR‑first keeps the project moving. All constructive contributions are welcome.
 
 
 ## Quick Features
