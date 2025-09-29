@@ -61,12 +61,18 @@ type refreshMsg struct {
 	err   error
 }
 
-func NewTaskModel(tasks []taskmeta.Task, themeName string, mouseEnabled bool, projectName string) TaskModel {
+func NewTaskModel(tasks []taskmeta.Task, themeName string, mouseEnabled bool, projectName string) *TaskModel {
 	theme := styles.NewDarkTheme()
 	if themeName == "light" {
 		theme = styles.NewLightTheme()
 	}
-	m := TaskModel{
+
+	// Sort tasks by line number to preserve order from Taskfile
+	sort.SliceStable(tasks, func(i, j int) bool {
+		return tasks[i].Line < tasks[j].Line
+	})
+
+	m := &TaskModel{
 		tasks:         tasks,
 		filteredTasks: tasks,
 		theme:         theme,
@@ -371,35 +377,37 @@ func (m *TaskModel) updateFilter() {
 // buildTabs organizes tasks into tabs based on their prefixes
 func (m *TaskModel) buildTabs() {
 	prefixMap := make(map[string][]taskmeta.Task)
+	var prefixes []string
+	prefixSet := make(map[string]bool)
+
+	// First, add "main" tab if there are any tasks without a prefix
+	hasMain := false
+	for _, task := range m.tasks {
+		if !strings.Contains(task.Name, "-") {
+			hasMain = true
+			break
+		}
+	}
+	if hasMain {
+		prefixes = append(prefixes, "main")
+		prefixSet["main"] = true
+	}
 
 	for _, task := range m.tasks {
-		// Find prefix (everything before first hyphen)
 		parts := strings.SplitN(task.Name, "-", 2)
 		if len(parts) > 1 {
 			prefix := parts[0]
+			if !prefixSet[prefix] {
+				prefixes = append(prefixes, prefix)
+				prefixSet[prefix] = true
+			}
 			prefixMap[prefix] = append(prefixMap[prefix], task)
 		} else {
-			// Tasks without prefix go to "main" tab
 			prefixMap["main"] = append(prefixMap["main"], task)
 		}
 	}
 
-	// Build tab list - main first, then alphabetically sorted prefixes
-	m.tabs = []string{}
-	if tasks, exists := prefixMap["main"]; exists && len(tasks) > 0 {
-		m.tabs = append(m.tabs, "main")
-	}
-
-	var prefixes []string
-	for prefix := range prefixMap {
-		if prefix != "main" {
-			prefixes = append(prefixes, prefix)
-		}
-	}
-	sort.Strings(prefixes)
-	m.tabs = append(m.tabs, prefixes...)
-
-	// Copy tasks to tabTasks map
+	m.tabs = prefixes
 	m.tabTasks = prefixMap
 
 	// Set default active tab
