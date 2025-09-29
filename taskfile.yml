@@ -1,528 +1,164 @@
----
-# https://taskfile.dev
-
 version: '3'
 
-vars:
-    APT_PKGS: "vim curl git"
-    APT_PKG: "htop"
-    SERVICE: "ssh"
-    DOCKER_COMPOSE_FILE: "docker-compose.yml"
-    DOCKER_SERVICE: "web"
-    CONTAINER: "my_container"
-    IMAGE: "ubuntu:22.04"
-    GIT_REPO: "https://github.com/git/git.git"
-    GIT_DIR: "$HOME/projects"
-    RSYNC_SRC: "$HOME/"
-    RSYNC_DEST: "/mnt/backup/home/"
-    BACKUP_ARCHIVE: "$HOME/backup_$(date +%F).tar.gz"
-    TARGET_HOST: "user@example.com"
-    TARGET_DIR: "/var/www/app"
-    SSH_PORT: "22"
-    UFW_PORT: "443"
-    UFW_SVC: "OpenSSH"
-    DISK_PATH: "/"
-    DU_PATH: "$HOME"
-    FIND_PATH: "$HOME"
-    FIND_SIZE: "+500M"
-    JOURNAL_UNIT: "ssh.service"
-    JOURNAL_SINCE: "today"
-    TIMEZONE: "UTC"
-    USERNAME: "deploy"
-    GROUPNAME: "sudo"
-    VENV_DIR: ".venv"
-    PY_REQ: "requirements.txt"
-    DOMAIN: "example.com"
-    PORT_CHECK: "443"
-    INTERFACE: "eth0"
-    MOUNT_POINT: "/"
-    JAIL_NAME: "sshd"
-    FLATPAK_APP: "org.mozilla.firefox"
-    SNAP_PKG: "lxd"
-
 tasks:
-    apt-update:
-        desc: Update APT package index
-        cmds:
-            - sudo apt-get update
-
-    apt-upgrade:
-        desc: Upgrade installed packages safely
-        cmds:
-            - sudo apt-get upgrade -y
-
-    apt-dist-upgrade:
-        desc: Perform distribution upgrade with dependency changes
-        cmds:
-            - sudo apt-get dist-upgrade -y
-
-    apt-autoremove:
-        desc: Remove unused packages and dependencies
-        cmds:
-            - sudo apt-get autoremove -y
-
-    apt-clean:
-        desc: Clean local APT repository of retrieved package files
-        cmds:
-            - sudo apt-get clean
-
-    apt-install:
-        desc: Install common productivity packages
-        cmds:
-            - sudo apt-get install -y {{.APT_PKGS}}
-
-    apt-install-one:
-        desc: Install a single package
-        cmds:
-            - sudo apt-get install -y {{.APT_PKG}}
-
-    apt-purge-pkg:
-        desc: Purge a package and its config files
-        cmds:
-            - sudo apt-get purge -y {{.APT_PKG}}
-
-    apt-fix-broken:
-        desc: Fix broken dependencies
-        cmds:
-            - sudo apt-get -f install
-
-    apt-list-upgradable:
-        desc: Show upgradable packages
-        cmds:
-            - apt list --upgradable
-
-    apt-hold:
-        desc: Hold a package at current version
-        cmds:
-            - sudo apt-mark hold {{.APT_PKG}}
-
-    apt-unhold:
-        desc: Unhold a package to allow upgrades
-        cmds:
-            - sudo apt-mark unhold {{.APT_PKG}}
-
-    apt-add-ppa:
-        desc: Add a PPA repository
-        cmds:
-            - sudo add-apt-repository -y ppa:git-core/ppa && sudo apt-get update
-
-    system-daemon-reload:
-        desc: Reload systemd manager configuration
-        cmds:
-            - sudo systemctl daemon-reload
-
-    system-service-status:
-        desc: Show service status
-        cmds:
-            - systemctl status {{.SERVICE}} --no-pager
-
-    system-service-restart:
-        desc: Restart a service
-        cmds:
-            - sudo systemctl restart {{.SERVICE}}
-
-    system-service-enable:
-        desc: Enable a service at boot
-        cmds:
-            - sudo systemctl enable {{.SERVICE}}
-
-    system-service-disable:
-        desc: Disable a service at boot
-        cmds:
-            - sudo systemctl disable {{.SERVICE}}
-
-    system-list-failed:
-        desc: List failed systemd units
-        cmds:
-            - systemctl --failed
-
-    logs-journal-unit:
-        desc: Tail logs for a systemd unit
-        cmds:
-            - sudo journalctl -u {{.JOURNAL_UNIT}} -f
-
-    logs-journal-since:
-        desc: Show logs since a specific time
-        cmds:
-            - sudo journalctl --since "{{.JOURNAL_SINCE}}" --no-pager
-
-    logs-journal-priority:
-        desc: Show warnings and errors from the system journal
-        cmds:
-            - sudo journalctl -p warning --no-pager
-
-    docker-ps:
-        desc: List running containers
-        cmds:
-            - docker ps
-
-    docker-images-prune:
-        desc: Remove dangling images
-        cmds:
-            - docker image prune -f
-
-    docker-system-prune:
-        desc: Remove unused data (containers, networks, images)
-        cmds:
-            - docker system prune -af --volumes
-
-    docker-compose-up:
-        desc: Start services with Docker Compose
-        cmds:
-            - docker compose -f {{.DOCKER_COMPOSE_FILE}} up -d
-
-    docker-compose-down:
-        desc: Stop and remove Docker Compose resources
-        cmds:
-            - docker compose -f {{.DOCKER_COMPOSE_FILE}} down
-
-    docker-pull-service:
-        desc: Pull latest image for a service
-        cmds:
-            - docker compose -f {{.DOCKER_COMPOSE_FILE}} pull {{.DOCKER_SERVICE}}
-
-    docker-logs-service:
-        desc: Tail logs for a service
-        cmds:
-            - docker compose -f {{.DOCKER_COMPOSE_FILE}} logs -f {{.DOCKER_SERVICE}}
-
-    docker-exec-shell:
-        desc: Exec into a running container
-        cmds:
-            - docker exec -it {{.CONTAINER}} bash
-
-    docker-prune-volumes:
-        desc: Remove dangling volumes
-        cmds:
-            - docker volume prune -f
-
-    docker-run-temp:
-        desc: Run a temporary container for diagnostics
-        cmds:
-            - docker run --rm -it {{.IMAGE}} bash -lc "apt-get update && apt-get install -y curl && curl -I https://{{.DOMAIN}}"
-
-    podman-ps:
-        desc: List running Podman containers
-        cmds:
-            - podman ps || true
-
-    git-clone:
-        desc: Clone a repository into a workspace
-        cmds:
-            - mkdir -p {{.GIT_DIR}} && cd {{.GIT_DIR}} && git clone {{.GIT_REPO}}
-
-    git-pull-all:
-        desc: Pull latest changes for all repos in a directory
-        cmds:
-            - |
-                find {{.GIT_DIR}} -maxdepth 1 -type d -exec sh -c 'cd "$1" && [ -d .git ] && git pull --ff-only || true' _ {} \;
-
-    git-fetch-prune:
-        desc: Fetch and prune stale branches
-        cmds:
-            - git fetch --all --prune
-
-    git-gc:
-        desc: Optimize local repository
-        cmds:
-            - git gc --aggressive --prune=now
-
-    git-clean-dry:
-        desc: Preview removal of untracked files
-        cmds:
-            - git clean -ndx
-
-    net-interfaces:
-        desc: Show IP addresses and links
-        cmds:
-            - ip -brief address
-
-    net-sockets:
-        desc: List listening sockets with processes
-        cmds:
-            - sudo ss -tulpn
-
-    net-dns-lookup:
-        desc: Resolve A and AAAA records
-        cmds:
-            - dig +short {{.DOMAIN}} A; dig +short {{.DOMAIN}} AAAA
-
-    net-traceroute:
-        desc: Trace route to a host
-        cmds:
-            - traceroute {{.DOMAIN}} || mtr -rw {{.DOMAIN}} || true
-
-    net-port-check:
-        desc: Check TCP port connectivity
-        cmds:
-            - nc -vz {{.DOMAIN}} {{.PORT_CHECK}} || true
-
-    net-curl-headers:
-        desc: Fetch HTTP response headers
-        cmds:
-            - curl -I https://{{.DOMAIN}}
-
-    net-speedtest:
-        desc: Run speed test if utility exists
-        cmds:
-            - command -v speedtest && speedtest || echo "speedtest not installed"
-
-    disk-usage-df:
-        desc: Show filesystem disk usage
-        cmds:
-            - df -hT
-
-    disk-usage-du:
-        desc: Summarize directory sizes
-        cmds:
-            - du -xh --max-depth=1 {{.DU_PATH}} | sort -h
-
-    disk-lsblk:
-        desc: List block devices
-        cmds:
-            - lsblk -o NAME,FSTYPE,SIZE,TYPE,MOUNTPOINT
-
-    disk-smart-health:
-        desc: Check SMART health for all disks
-        cmds:
-            - sudo bash -lc 'for d in /dev/sd? /dev/nvme?n1 2>/dev/null; do smartctl -H "$d" || true; done'
-
-    disk-trim:
-        desc: Manually TRIM mounted filesystems that support it
-        cmds:
-            - sudo fstrim -av
-
-    disk-open-deleted:
-        desc: Show processes holding deleted files
-        cmds:
-            - sudo lsof | grep '(deleted)' || true
-
-    disk-find-large:
-        desc: Find large files
-        cmds:
-            - sudo find {{.FIND_PATH}} -xdev -type f -size {{.FIND_SIZE}} -printf "%s %p\n" | sort -nr | head -50
-
-    backup-rsync-push:
-        desc: Push incremental backup with rsync
-        cmds:
-            - rsync -aAXH --delete --info=progress2 {{.RSYNC_SRC}} {{.RSYNC_DEST}}
-
-    backup-tar-create:
-        desc: Create compressed backup archive
-        cmds:
-            - tar -czf {{.BACKUP_ARCHIVE}} --exclude={{.BACKUP_ARCHIVE}} {{.RSYNC_SRC}}
-
-    backup-tar-verify:
-        desc: Verify archive integrity
-        cmds:
-            - gzip -t {{.BACKUP_ARCHIVE}} && echo "OK"
-
-    ssh-keygen-ed25519:
-        desc: Generate an Ed25519 SSH key
-        cmds:
-            - ssh-keygen -t ed25519 -a 100 -f "$HOME/.ssh/id_ed25519" -N ""
-
-    ssh-copy-id:
-        desc: Copy SSH public key to remote host
-        cmds:
-            - ssh-copy-id -p {{.SSH_PORT}} {{.TARGET_HOST}}
-
-    ssh-test-conn:
-        desc: Test SSH connectivity and host key
-        cmds:
-            - ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -p {{.SSH_PORT}} {{.TARGET_HOST}} true
-
-    transfer-scp:
-        desc: Copy directory to remote host
-        cmds:
-            - scp -P {{.SSH_PORT}} -r {{.DU_PATH}} {{.TARGET_HOST}}:{{.TARGET_DIR}}
-
-    time-status:
-        desc: Show time sync status
-        cmds:
-            - timedatectl status
-
-    time-set-timezone:
-        desc: Set system timezone
-        cmds:
-            - sudo timedatectl set-timezone {{.TIMEZONE}} && timedatectl
-
-    user-add:
-        desc: Create a new user with home and bash shell
-        cmds:
-            - sudo useradd -m -s /bin/bash {{.USERNAME}}
-
-    user-passwd:
-        desc: Set or change user password
-        cmds:
-            - echo "{{.USERNAME}}:$(openssl rand -base64 16)" | sudo chpasswd
-
-    user-add-sudo:
-        desc: Add user to sudo group
-        cmds:
-            - sudo usermod -aG {{.GROUPNAME}} {{.USERNAME}}
-
-    user-lock:
-        desc: Lock a user account
-        cmds:
-            - sudo usermod -L {{.USERNAME}}
-
-    user-unlock:
-        desc: Unlock a user account
-        cmds:
-            - sudo usermod -U {{.USERNAME}}
-
-    security-ufw-enable:
-        desc: Enable UFW and allow SSH
-        cmds:
-            - sudo ufw allow "{{.UFW_SVC}}"
-            - sudo ufw --force enable
-            - sudo ufw status verbose
-
-    security-ufw-allow-port:
-        desc: Allow a TCP port
-        cmds:
-            - sudo ufw allow {{.UFW_PORT}}/tcp && sudo ufw status numbered
-
-    security-ufw-deny-port:
-        desc: Deny a TCP port
-        cmds:
-            - sudo ufw deny {{.UFW_PORT}}/tcp && sudo ufw status numbered
-
-    security-fail2ban-status:
-        desc: Show Fail2Ban jail status
-        cmds:
-            - sudo fail2ban-client status {{.JAIL_NAME}} || sudo fail2ban-client status || true
-
-    openssl-cert-inspect:
-        desc: Inspect remote TLS certificate
-        cmds:
-            - |
-                echo | openssl s_client -servername {{.DOMAIN}} -connect {{.DOMAIN}}:443 2>/dev/null | openssl x509 -noout -issuer -subject -dates -fingerprint -sha256
-
-    proc-top-cpu:
-        desc: Show top processes by CPU usage
-        cmds:
-            - ps -eo pid,ppid,cmd,%cpu,%mem --sort=-%cpu | head -20
-
-    proc-top-mem:
-        desc: Show top processes by memory usage
-        cmds:
-            - ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%mem | head -20
-
-    proc-renice-highcpu:
-        desc: Lower priority of top CPU consumer
-        cmds:
-            - sudo bash -lc 'pid=$(ps -eo pid,%cpu --sort=-%cpu | awk "NR==2{print \$1}") && [ -n "$pid" ] && renice +10 -p "$pid"'
-
-    proc-kill-by-name:
-        desc: Kill processes by name
-        cmds:
-            - sudo pkill -f "{{.SERVICE}}" || true
-
-    sysinfo-quick:
-        desc: Quick system overview
-        cmds:
-            - uname -a
-            - lsb_release -a || cat /etc/os-release
-            - uptime
-            - free -h
-            - vmstat 1 5
-            - iostat -xz 1 3 || true
-
-    net-firewall-list:
-        desc: List firewall rules
-        cmds:
-            - sudo ufw status numbered || sudo iptables -S || true
-
-    net-nmcli-summary:
-        desc: NetworkManager summary
-        cmds:
-            - nmcli general status || true
-            - nmcli device status || true
-
-    mounts-list:
-        desc: List mounts with filesystem types
-        cmds:
-            - findmnt -t ext4,ext3,xfs,btrfs
-
-    mounts-lsof:
-        desc: Show open files on a mountpoint
-        cmds:
-            - sudo lsof +f -- {{.MOUNT_POINT}} | head -50
-
-    venv-create:
-        desc: Create Python virtual environment
-        cmds:
-            - python3 -m venv {{.VENV_DIR}}
-
-    venv-upgrade-pip:
-        desc: Upgrade pip in venv
-        cmds:
-            - . {{.VENV_DIR}}/bin/activate && pip install --upgrade pip
-
-    venv-install-reqs:
-        desc: Install requirements in venv
-        cmds:
-            - . {{.VENV_DIR}}/bin/activate && [ -f "{{.PY_REQ}}" ] && pip install -r {{.PY_REQ}} || true
-
-    snap-refresh:
-        desc: Refresh all snaps
-        cmds:
-            - sudo snap refresh
-
-    snap-list:
-        desc: List installed snaps
-        cmds:
-            - snap list
-
-    snap-remove:
-        desc: Remove a snap package
-        cmds:
-            - sudo snap remove {{.SNAP_PKG}} || true
-
-    flatpak-update:
-        desc: Update all Flatpak apps
-        cmds:
-            - flatpak update -y || true
-
-    flatpak-uninstall-unused:
-        desc: Uninstall unused Flatpak refs
-        cmds:
-            - flatpak uninstall --unused -y || true
-
-    flatpak-run-app:
-        desc: Run a Flatpak app if installed
-        cmds:
-            - flatpak run {{.FLATPAK_APP}} || true
-
-    cleanup-thumbnails:
-        desc: Clean GNOME thumbnail cache
-        cmds:
-            - rm -rf "$HOME/.cache/thumbnails/"*
-
-    locale-reconfigure:
-        desc: Reconfigure locales non-interactively
-        cmds:
-            - sudo update-locale LANG=en_US.UTF-8 && locale
-
-    kernel-unattended-upgrades:
-        desc: Ensure unattended upgrades are enabled
-        cmds:
-            - sudo apt-get install -y unattended-upgrades && sudo dpkg-reconfigure -f noninteractive unattended-upgrades
-
-    cron-list:
-        desc: List user and system cron jobs
-        cmds:
-            - crontab -l || true
-            - sudo ls -l /etc/cron.d /etc/cron.daily /etc/cron.hourly /etc/cron.weekly /etc/cron.monthly
-
-    hostnamectl-set:
-        desc: Set system hostname
-        cmds:
-            - sudo hostnamectl set-hostname {{.DOMAIN}} && hostnamectl
-
-    sysctl-reload:
-        desc: Reload sysctl settings
-        cmds:
-            - sudo sysctl --system
+  hello:
+    desc: Test task that prints a message
+    cmds:
+      - echo "✓ Task execution successful!"
+      - echo "This task was selected in the GUI and executed automatically"
+
+  test-echo:
+    desc: Another simple test
+    cmds:
+      - echo "Test command executed from GUI"
+      - date
+
+  list-files:
+    desc: List files in current directory
+    cmds:
+      - ls -l
+
+  show-disk-usage:
+    desc: Show disk usage
+    cmds:
+      - df -h
+
+  check-memory:
+    desc: Show memory usage
+    cmds:
+      - free -h
+
+  show-uptime:
+    desc: Show system uptime
+    cmds:
+      - uptime
+
+  check-ip:
+    desc: Show IP address
+    cmds:
+      - ip addr show
+
+  check-network:
+    desc: Show network connections
+    cmds:
+      - netstat -tulnp || ss -tulnp
+
+  show-users:
+    desc: Show logged in users
+    cmds:
+      - who
+
+  show-date:
+    desc: Show current date and time
+    cmds:
+      - date
+
+  calendar:
+    desc: Show current month calendar
+    cmds:
+      - cal
+
+  print-working-directory:
+    desc: Print current directory
+    cmds:
+      - pwd
+
+  make-directory:
+    desc: Create a directory named test-dir
+    cmds:
+      - mkdir -p test-dir
+
+  remove-directory:
+    desc: Remove directory test-dir
+    cmds:
+      - rmdir test-dir || true
+
+  copy-file:
+    desc: Copy /etc/hosts to hosts.copy
+    cmds:
+      - cp /etc/hosts hosts.copy
+
+  move-file:
+    desc: Move hosts.copy to hosts.backup
+    cmds:
+      - mv hosts.copy hosts.backup || true
+
+  remove-file:
+    desc: Remove hosts.backup
+    cmds:
+      - rm -f hosts.backup
+
+  show-file-content:
+    desc: Display contents of /etc/hostname
+    cmds:
+      - cat /etc/hostname
+
+  show-file-head:
+    desc: Display first lines of /etc/passwd
+    cmds:
+      - head -n 5 /etc/passwd
+
+  show-file-tail:
+    desc: Display last lines of /etc/passwd
+    cmds:
+      - tail -n 5 /etc/passwd
+
+  search-in-file:
+    desc: Search for 'root' in /etc/passwd
+    cmds:
+      - grep root /etc/passwd
+
+  count-lines:
+    desc: Count lines in /etc/passwd
+    cmds:
+      - wc -l /etc/passwd
+
+  show-processes:
+    desc: List running processes
+    cmds:
+      - ps aux
+
+  check-kernel:
+    desc: Show kernel version
+    cmds:
+      - uname -r
+
+  show-system-info:
+    desc: Show system information
+    cmds:
+      - uname -a
+
+  list-block-devices:
+    desc: List block devices
+    cmds:
+      - lsblk
+
+  list-usb:
+    desc: List USB devices
+    cmds:
+      - lsusb || true
+
+  list-pci:
+    desc: List PCI devices
+    cmds:
+      - lspci || true
+
+  check-dns:
+    desc: Resolve google.com
+    cmds:
+      - dig google.com || nslookup google.com
+
+  ping-test:
+    desc: Ping google.com
+    cmds:
+      - ping -c 4 google.com
+
+  update-system:
+    desc: Update package lists (Debian/Ubuntu)
+    cmds:
+      - sudo apt update
+
+  upgrade-system:
+    desc: Upgrade installed packages (Debian/Ubuntu)
+    cmds:
+      - sudo apt upgrade -y
