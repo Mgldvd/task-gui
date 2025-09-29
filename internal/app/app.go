@@ -451,10 +451,8 @@ func (m *TaskModel) buildTabs() {
 		}
 	}
 
-	// Sort tabs if in alpha mode, but keep "main" first
-	if m.sortMode == "alpha" {
-		sort.Strings(prefixes)
-	}
+	// Always sort tabs alphabetically
+	sort.Strings(prefixes)
 
 	// Ensure "main" tab is always first if it exists
 	mainIndex := -1
@@ -464,7 +462,7 @@ func (m *TaskModel) buildTabs() {
 			break
 		}
 	}
-	if mainIndex > 0 { // if main is not already at the start
+	if mainIndex != -1 { // if main exists, move it to the front
 		mainPrefix := prefixes[mainIndex]
 		prefixes = append(prefixes[:mainIndex], prefixes[mainIndex+1:]...)
 		prefixes = append([]string{mainPrefix}, prefixes...)
