@@ -969,41 +969,25 @@ func (m TaskModel) renderList() string {
 	content.WriteString(status.Width(innerWidth).Render(statusText) + "\n")
 
 	// Build footer parts with consistent layout
-	// Order: pager | move | tab switch | enter | search | refresh | quit
 	parts := []string{}
 
-	// Add page counter first (will be added at the end, but we'll reorder)
-	var pageCounter string
+	// Add page counter first
 	if len(m.filteredTasks) > 0 {
-		// Use fixed width formatting to prevent misalignment during navigation
 		maxItems := len(m.filteredTasks)
 		current := m.selected + 1
-		// Calculate width needed for largest possible numbers
 		maxWidth := len(fmt.Sprintf("%d/%d", maxItems, maxItems))
 		pageStr := fmt.Sprintf("%*s", maxWidth, fmt.Sprintf("%d/%d", current, maxItems))
-		pageCounter = m.theme.Highlight.Render(pageStr)
-		parts = append(parts, pageCounter)
+		parts = append(parts, m.theme.Highlight.Render(pageStr))
 	}
 
-	// Add move
 	parts = append(parts, "↑↓ move")
-
-	// Add tab switch (if applicable)
 	if len(m.tabs) > 1 {
 		parts = append(parts, "←→/Tab switch")
 	}
-
-	// Add highlighted "Enter run"
-	enterRun := m.theme.Highlight.Render("Enter run")
-	parts = append(parts, enterRun)
-
-	// Add search
+	parts = append(parts, m.theme.Highlight.Render("Enter run"))
 	parts = append(parts, "/ search")
-
-	// Add refresh
 	parts = append(parts, "r/^R refresh")
 
-	// Add sort mode indicator
 	var sortIndicator string
 	if m.sortMode == "alpha" {
 		sortIndicator = "Sort: A→Z (^S)"
@@ -1012,28 +996,30 @@ func (m TaskModel) renderList() string {
 	}
 	parts = append(parts, sortIndicator)
 
-	// Add quit
 	parts = append(parts, "q quit")
 
-	// Ensure footer fits within width and doesn't overflow
+	// Flexible footer layout that wraps
 	separator := "  │  "
-	footerContent := strings.Join(parts, separator)
+	var lines []string
+	var currentLine string
 
-	// Check if content would overflow and adjust if needed
-	footerWidth := lipgloss.Width(footerContent)
-	if footerWidth > innerWidth {
-		// If overflow, try shorter separator
-		separator = " │ "
-		footerContent = strings.Join(parts, separator)
-		footerWidth = lipgloss.Width(footerContent)
-
-		// If still overflows, truncate less important parts
-		if footerWidth > innerWidth && len(parts) > 4 {
-			// Remove the search hint if needed to fit
-			shortParts := parts[1:] // Remove "/ search"
-			footerContent = strings.Join(shortParts, separator)
+	for _, part := range parts {
+		if currentLine == "" {
+			currentLine = part
+			continue
+		}
+		if lipgloss.Width(currentLine)+lipgloss.Width(separator)+lipgloss.Width(part) > innerWidth {
+			lines = append(lines, currentLine)
+			currentLine = part
+		} else {
+			currentLine += separator + part
 		}
 	}
+	if currentLine != "" {
+		lines = append(lines, currentLine)
+	}
+
+	footerContent := strings.Join(lines, "\n")
 
 	footerBox := m.theme.FooterBox.Copy()
 	footer := footerBox.Width(innerWidth).Render(footerContent)
