@@ -31,6 +31,8 @@ type Theme struct {
 	Highlight     lipgloss.Style
 	Accent        lipgloss.Style
 	Logo          lipgloss.Style
+	// Added a new style for banner options to prevent wrapping within options
+	BannerOptions lipgloss.Style
 }
 
 // NewDarkTheme returns the dark color scheme.
@@ -69,6 +71,8 @@ func NewDarkTheme() Theme {
 		Highlight: lipgloss.NewStyle().Foreground(lipgloss.Color("#EC4899")),
 		Accent:    lipgloss.NewStyle().Foreground(lipgloss.Color("#DDD6FE")),
 		Logo:      lipgloss.NewStyle().Foreground(lipgloss.Color("#A855F7")).Bold(true),
+		// Added a new style for banner options to prevent wrapping within options
+		BannerOptions: lipgloss.NewStyle().Inline(true).MaxWidth(1000),
 	}
 }
 
@@ -107,5 +111,7 @@ func NewLightTheme() Theme {
 		Highlight: lipgloss.NewStyle().Foreground(lipgloss.Color("#EC4899")),
 		Accent:    lipgloss.NewStyle().Foreground(lipgloss.Color("#A855F7")),
 		Logo:      lipgloss.NewStyle().Foreground(lipgloss.Color("#7C3AED")).Bold(true),
+		// Added a new style for banner options to prevent wrapping within options
+		BannerOptions: lipgloss.NewStyle().Inline(true).MaxWidth(1000),
 	}
 }

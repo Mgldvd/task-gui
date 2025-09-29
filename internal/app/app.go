@@ -1003,7 +1003,16 @@ func (m TaskModel) renderList() string {
 	var lines []string
 	var currentLine string
 
-	for _, part := range parts {
+	// Prevent internal wrapping inside each part by replacing spaces within
+	// each option with non-breaking spaces (U+00A0). This ensures words inside
+	// a part stay together; wrapping is allowed only between parts at the
+	// separator.
+	partsNoBreak := make([]string, len(parts))
+	for i, p := range parts {
+		partsNoBreak[i] = strings.ReplaceAll(p, " ", "\u00A0")
+	}
+
+	for _, part := range partsNoBreak {
 		if currentLine == "" {
 			currentLine = part
 			continue
