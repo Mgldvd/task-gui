@@ -59,6 +59,34 @@ Optional:
 ./taskg --project ../other/repo
 ```
 
+Installing via installer script
+-------------------------------
+
+An installer script is included to clone, build and install `taskg` to `/usr/local/bin`.
+
+From a system with Git and Go installed you can run:
+
+```bash
+# run installer with defaults (uses this repo)
+bash install.sh
+
+# or pipe from remote (replace URL with canonical host if published):
+curl -sL https://raw.githubusercontent.com/Mgldvd/task-gui/master/install.sh | bash
+```
+
+You can also specify a different repo or branch:
+
+```bash
+./install.sh https://github.com/<owner>/<repo>.git main
+```
+
+After install, run:
+
+```bash
+taskg --help
+```
+
+
 ## Key Shortcuts
 | Key | Action |
 |-----|--------|
