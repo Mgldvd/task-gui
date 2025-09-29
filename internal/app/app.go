@@ -388,11 +388,14 @@ func (m *TaskModel) moveToNextTab() {
 	}
 
 	if currentIndex >= 0 {
-		nextIndex := (currentIndex + 1) % len(m.tabs)
-		m.activeTab = m.tabs[nextIndex]
+		// Move to next tab only if we're not already at the last tab. Do not wrap-around.
+		if currentIndex < len(m.tabs)-1 {
+			nextIndex := currentIndex + 1
+			m.activeTab = m.tabs[nextIndex]
 
-		// Adjust tab offset if needed to keep new tab visible
-		m.ensureTabVisible(nextIndex)
+			// Adjust tab offset if needed to keep new tab visible
+			m.ensureTabVisible(nextIndex)
+		}
 	}
 
 	// (legacy tab state restore removed)
@@ -416,11 +419,14 @@ func (m *TaskModel) moveToPrevTab() {
 	}
 
 	if currentIndex >= 0 {
-		prevIndex := (currentIndex - 1 + len(m.tabs)) % len(m.tabs)
-		m.activeTab = m.tabs[prevIndex]
+		// Move to previous tab only if we're not already at the first tab. Do not wrap-around.
+		if currentIndex > 0 {
+			prevIndex := currentIndex - 1
+			m.activeTab = m.tabs[prevIndex]
 
-		// Adjust tab offset if needed to keep new tab visible
-		m.ensureTabVisible(prevIndex)
+			// Adjust tab offset if needed to keep new tab visible
+			m.ensureTabVisible(prevIndex)
+		}
 	}
 
 	// (legacy tab state restore removed)
@@ -607,19 +613,21 @@ func (m TaskModel) renderTabs(width int) string {
 		return ""
 	}
 
-	var tabParts []string
+	// tabParts removed; we build renderedTabs and then truncate/join below
 
-	// Add left arrow if we can scroll left
-	if m.tabOffset > 0 {
-		tabParts = append(tabParts, m.theme.TabArrow.Render("◀"))
+	// We'll build the tab pieces (without arrows), then ensure the final
+	// output fits on a single line by truncating the tab content if needed.
+	// Reserve a small amount of space for left/right arrows when present so
+	// the arrows are always visible and tabs never wrap to multiple lines.
+
+	// Calculate available width for tabs and reserve for borders/padding
+	availableWidth := width - 11 // small margin for arrows/borders
+	if availableWidth < 20 {
+		availableWidth = 20
 	}
 
-	// Calculate how many tabs we can fit
-	availableWidth := width - 10 // Leave some space for arrows and borders
-	currentWidth := 0
-	visibleTabs := 0
-
-	// First pass: determine how many tabs fit
+	// Render tab parts (no arrows yet)
+	var renderedTabs []string
 	for i := m.tabOffset; i < len(m.tabs); i++ {
 		tab := m.tabs[i]
 		tabName := tab
@@ -629,47 +637,57 @@ func (m TaskModel) renderTabs(width int) string {
 			tabName = m.titleCase(tab)
 		}
 
-		// Account for highlight bar and space (2 chars) + padding + margins
-		tabWidth := len(tabName) + 8 // highlight bar + space + padding + margins
-		if currentWidth + tabWidth > availableWidth {
-			break
-		}
-		currentWidth += tabWidth
-		visibleTabs++
-	}
-
-	// Second pass: render visible tabs
-	for i := m.tabOffset; i < m.tabOffset + visibleTabs && i < len(m.tabs); i++ {
-		tab := m.tabs[i]
-		tabName := tab
-		if tab == "main" {
-			tabName = "Main"
-		} else {
-			tabName = m.titleCase(tab)
-		}
-
-		var style lipgloss.Style
 		if tab == m.activeTab {
-			style = m.theme.TabActive
 			// Add vertical bar highlight for active tab
 			highlightBar := m.theme.Highlight.Render("▎")
 			tabContent := highlightBar + " " + tabName
-			tabParts = append(tabParts, style.Render(tabContent))
+			renderedTabs = append(renderedTabs, m.theme.TabActive.Render(tabContent))
 		} else {
-			style = m.theme.TabInactive
-			// Add spaces to align with active tab (bar + space = 2 chars)
+			// Add spaces to align with active tab (bar + space == 2 chars)
 			tabContent := "  " + tabName
-			tabParts = append(tabParts, style.Render(tabContent))
+			renderedTabs = append(renderedTabs, m.theme.TabInactive.Render(tabContent))
 		}
 	}
 
-	// Add right arrow if we can scroll right
-	if m.tabOffset + visibleTabs < len(m.tabs) {
-		tabParts = append(tabParts, m.theme.TabArrow.Render("▶"))
+	// Join without arrows to measure width
+	tabsContent := strings.Join(renderedTabs, "")
+
+	// Determine whether arrows will be needed
+	leftArrow := ""
+	rightArrow := ""
+	if m.tabOffset > 0 {
+		leftArrow = m.theme.TabArrow.Render("◀")
+	}
+	// A simple heuristic: if there are tabs beyond the last we attempted to render
+	// then show the right arrow. We can approximate this by checking if the raw
+	// rendered width exceeds the available space.
+	// Reserve space for arrows when truncating so they remain visible.
+	reservedForArrows := 0
+	if leftArrow != "" {
+		reservedForArrows += lipgloss.Width(leftArrow)
 	}
 
-	tabsContent := strings.Join(tabParts, "")
-	return m.theme.TabsContainer.Copy().Width(width).Render(tabsContent)
+	// If raw content would overflow availableWidth, we'll reserve space for a right arrow
+	if lipgloss.Width(tabsContent)+reservedForArrows > availableWidth {
+		rightArrow = m.theme.TabArrow.Render("▶")
+		reservedForArrows += lipgloss.Width(rightArrow)
+	}
+
+	// Compute content width available for tab text (avoid negative)
+	contentWidth := availableWidth - reservedForArrows
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+
+	// Truncate the joined tabs content to fit into the single-line area.
+	// This prevents wrapping. We keep the left/right arrows outside the
+	// truncated content so they're always visible.
+	truncated := truncateStringToWidth(tabsContent, contentWidth)
+
+	// Compose final tab line with arrows and truncated content
+	finalTabs := leftArrow + truncated + rightArrow
+
+	return m.theme.TabsContainer.Copy().Width(width).Render(finalTabs)
 }
 
 func (m TaskModel) renderList() string {
@@ -939,4 +957,33 @@ func (m *TaskModel) titleCase(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + strings.ToLower(s[1:])
+}
+
+// truncateStringToWidth cuts s so its visible width (measured by lipgloss.Width)
+// does not exceed maxW. If truncation is required we append a single right
+// ellipsis character to indicate truncation. This is a small helper because
+// older lipgloss versions may not provide a Truncate helper.
+func truncateStringToWidth(s string, maxW int) string {
+	if maxW <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= maxW {
+		return s
+	}
+	// Reserve 1 char for ellipsis
+	// Walk runes until adding one more would exceed maxW-1
+	runes := []rune(s)
+	var b strings.Builder
+	for i := 0; i < len(runes); i++ {
+		b.WriteRune(runes[i])
+		if lipgloss.Width(b.String()) >= maxW-1 {
+			break
+		}
+	}
+	res := b.String()
+	// If we're still too long, trim last rune(s)
+	for lipgloss.Width(res) > maxW-1 {
+		res = string([]rune(res)[:len([]rune(res))-1])
+	}
+	return res + "…"
 }
