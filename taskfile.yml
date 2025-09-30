@@ -1,164 +1,265 @@
+---
 version: '3'
 
 tasks:
-  hello:
-    desc: Test task that prints a message
-    cmds:
-      - echo "✓ Task execution successful!"
-      - echo "This task was selected in the GUI and executed automatically"
+    util-hello:
+        desc: Test task that prints a message
+        cmds:
+            - echo "✓ Task execution successful!"
+            - echo "This task was selected in the GUI and executed automatically"
 
-  test-echo:
-    desc: Another simple test
-    cmds:
-      - echo "Test command executed from GUI"
-      - date
+    util-echo:
+        desc: Another simple test
+        cmds:
+            - echo "Test command executed from GUI"
+            - date
 
-  list-files:
-    desc: List files in current directory
-    cmds:
-      - ls -l
+    util-list-files:
+        desc: List files in current directory
+        cmds:
+            - ls -l
 
-  show-disk-usage:
-    desc: Show disk usage
-    cmds:
-      - df -h
+    util-disk-usage:
+        desc: Show disk usage
+        cmds:
+            - df -h
 
-  check-memory:
-    desc: Show memory usage
-    cmds:
-      - free -h
+    sys-memory:
+        desc: Show memory usage
+        cmds:
+            - free -h
 
-  show-uptime:
-    desc: Show system uptime
-    cmds:
-      - uptime
+    sys-uptime:
+        desc: Show system uptime
+        cmds:
+            - uptime
 
-  check-ip:
-    desc: Show IP address
-    cmds:
-      - ip addr show
+    net-ip:
+        desc: Show IP address
+        cmds:
+            - ip addr show
 
-  check-network:
-    desc: Show network connections
-    cmds:
-      - netstat -tulnp || ss -tulnp
+    net-connections:
+        desc: Show network connections
+        cmds:
+            - netstat -tulnp || ss -tulnp
 
-  show-users:
-    desc: Show logged in users
-    cmds:
-      - who
+    sys-users:
+        desc: Show logged in users
+        cmds:
+            - who
 
-  show-date:
-    desc: Show current date and time
-    cmds:
-      - date
+    util-date:
+        desc: Show current date and time
+        cmds:
+            - date
 
-  calendar:
-    desc: Show current month calendar
-    cmds:
-      - cal
+    util-calendar:
+        desc: Show current month calendar
+        cmds:
+            - cal
 
-  print-working-directory:
-    desc: Print current directory
-    cmds:
-      - pwd
+    util-pwd:
+        desc: Print current directory
+        cmds:
+            - pwd
 
-  make-directory:
-    desc: Create a directory named test-dir
-    cmds:
-      - mkdir -p test-dir
+    dir-make:
+        desc: Create a directory (asks for name)
+        vars:
+            dir:
+                sh: |
+                    read -p "Enter directory name (default: test-dir): " d
+                    echo ${d:-test-dir}
+        cmds:
+            - mkdir -p {{.dir}}
 
-  remove-directory:
-    desc: Remove directory test-dir
-    cmds:
-      - rmdir test-dir || true
+    dir-remove:
+        desc: Remove a directory (asks for name)
+        vars:
+            dir:
+                sh: |
+                    read -p "Enter directory to remove (default: test-dir): " d
+                    echo ${d:-test-dir}
+        cmds:
+            - rmdir "{{.dir}}" || true
 
-  copy-file:
-    desc: Copy /etc/hosts to hosts.copy
-    cmds:
-      - cp /etc/hosts hosts.copy
+    file-copy:
+        desc: Copy a file (asks for src and dest)
+        vars:
+            src:
+                sh: |
+                    read -p "Enter source file (default: /etc/hosts): " s
+                    echo ${s:-/etc/hosts}
+            dest:
+                sh: |
+                    read -p "Enter destination file (default: hosts.copy): " d
+                    echo ${d:-hosts.copy}
+        cmds:
+            - cp "{{.src}}" "{{.dest}}"
 
-  move-file:
-    desc: Move hosts.copy to hosts.backup
-    cmds:
-      - mv hosts.copy hosts.backup || true
+    file-move:
+        desc: Move/rename a file (asks for src and dest)
+        vars:
+            src:
+                sh: |
+                    read -p "Enter source file (default: hosts.copy): " s
+                    echo ${s:-hosts.copy}
+            dest:
+                sh: |
+                    read -p "Enter destination file (default: hosts.backup): " d
+                    echo ${d:-hosts.backup}
+        cmds:
+            - mv "{{.src}}" "{{.dest}}" || true
 
-  remove-file:
-    desc: Remove hosts.backup
-    cmds:
-      - rm -f hosts.backup
+    file-remove:
+        desc: Remove a file (asks for path)
+        vars:
+            file:
+                sh: |
+                    read -p "Enter file to remove (default: hosts.backup): " f
+                    echo ${f:-hosts.backup}
+        cmds:
+            - rm -f "{{.file}}"
 
-  show-file-content:
-    desc: Display contents of /etc/hostname
-    cmds:
-      - cat /etc/hostname
+    file-cat:
+        desc: Display contents of a file
+        vars:
+            file:
+                sh: |
+                    read -p "Enter file to display (default: /etc/hostname): " f
+                    echo ${f:-/etc/hostname}
+        cmds:
+            - cat "{{.file}}"
 
-  show-file-head:
-    desc: Display first lines of /etc/passwd
-    cmds:
-      - head -n 5 /etc/passwd
+    file-head:
+        desc: Display first N lines of a file
+        vars:
+            file:
+                sh: |
+                    read -p "Enter file (default: /etc/passwd): " f
+                    echo ${f:-/etc/passwd}
+            lines:
+                sh: |
+                    read -p "Enter number of lines (default: 5): " n
+                    echo ${n:-5}
+        cmds:
+            - head -n {{.lines}} "{{.file}}"
 
-  show-file-tail:
-    desc: Display last lines of /etc/passwd
-    cmds:
-      - tail -n 5 /etc/passwd
+    file-tail:
+        desc: Display last N lines of a file
+        vars:
+            file:
+                sh: |
+                    read -p "Enter file (default: /etc/passwd): " f
+                    echo ${f:-/etc/passwd}
+            lines:
+                sh: |
+                    read -p "Enter number of lines (default: 5): " n
+                    echo ${n:-5}
+        cmds:
+            - tail -n {{.lines}} "{{.file}}"
 
-  search-in-file:
-    desc: Search for 'root' in /etc/passwd
-    cmds:
-      - grep root /etc/passwd
+    file-search:
+        desc: Search for a term in a file
+        vars:
+            term:
+                sh: |
+                    read -p "Enter search term (default: root): " t
+                    echo ${t:-root}
+            file:
+                sh: |
+                    read -p "Enter file to search (default: /etc/passwd): " f
+                    echo ${f:-/etc/passwd}
+        cmds:
+            - grep "{{.term}}" "{{.file}}"
 
-  count-lines:
-    desc: Count lines in /etc/passwd
-    cmds:
-      - wc -l /etc/passwd
+    file-count-lines:
+        desc: Count lines in a file
+        vars:
+            file:
+                sh: |
+                    read -p "Enter file to count lines (default: /etc/passwd): " f
+                    echo ${f:-/etc/passwd}
+        cmds:
+            - wc -l "{{.file}}"
 
-  show-processes:
-    desc: List running processes
-    cmds:
-      - ps aux
+    sys-processes:
+        desc: List running processes
+        cmds:
+            - ps aux
 
-  check-kernel:
-    desc: Show kernel version
-    cmds:
-      - uname -r
+    sys-kernel:
+        desc: Show kernel version
+        cmds:
+            - uname -r
 
-  show-system-info:
-    desc: Show system information
-    cmds:
-      - uname -a
+    sys-info:
+        desc: Show system information
+        cmds:
+            - uname -a
 
-  list-block-devices:
-    desc: List block devices
-    cmds:
-      - lsblk
+    sys-block-devices:
+        desc: List block devices
+        cmds:
+            - lsblk
 
-  list-usb:
-    desc: List USB devices
-    cmds:
-      - lsusb || true
+    sys-usb:
+        desc: List USB devices
+        cmds:
+            - lsusb || true
 
-  list-pci:
-    desc: List PCI devices
-    cmds:
-      - lspci || true
+    sys-pci:
+        desc: List PCI devices
+        cmds:
+            - lspci || true
 
-  check-dns:
-    desc: Resolve google.com
-    cmds:
-      - dig google.com || nslookup google.com
+    net-dns:
+        desc: Resolve a hostname
+        vars:
+            host:
+                sh: |
+                    read -p "Enter hostname to resolve (default: google.com): " h
+                    echo ${h:-google.com}
+        cmds:
+            - dig "{{.host}}" || nslookup "{{.host}}"
 
-  ping-test:
-    desc: Ping google.com
-    cmds:
-      - ping -c 4 google.com
+    net-ping:
+        desc: Ping a host
+        vars:
+            host:
+                sh: |
+                    read -p "Enter hostname to ping (default: google.com): " h
+                    echo ${h:-google.com}
+        cmds:
+            - ping -c 4 "{{.host}}"
 
-  update-system:
-    desc: Update package lists (Debian/Ubuntu)
-    cmds:
-      - sudo apt update
+    apt-update:
+        desc: Update package lists (Debian/Ubuntu)
+        cmds:
+            - sudo apt update
 
-  upgrade-system:
-    desc: Upgrade installed packages (Debian/Ubuntu)
-    cmds:
-      - sudo apt upgrade -y
+    apt-upgrade:
+        desc: Upgrade installed packages (Debian/Ubuntu)
+        cmds:
+            - sudo apt upgrade -y
+
+    art:
+        desc: Print some ASCII art
+        cmds:
+            - |
+                echo "   _____         _      "
+                echo "  |_   _|__  ___| |__   "
+                echo "    | |/ _ \\/ __| '_ \\  "
+                echo "    | |  __/\\__ \\ | | | "
+                echo "    |_|\\___||___/_| |_| "
+                echo ""
+                echo "ASCII ART DEMO!"
+
+    about:
+        desc: Info about Task GUI
+        cmds:
+            - |
+                echo "Task GUI - A simple frontend for Taskfile.dev"
+                echo "Repository: https://github.com/Mgldvd/task-gui"
+                echo "Version: Experimental"
