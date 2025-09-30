@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -9,7 +10,8 @@ import (
 
 	"taskg/internal/styles"
 	"taskg/internal/taskmeta"
-	textinput "github.com/charmbracelet/bubbles/textinput"
+
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -29,7 +31,7 @@ type TaskModel struct {
 	mouseEnabled  bool
 	width         int
 	height        int
-	lastCommand   string
+	lastCommand   []string // Can now hold command and args
 	statusMessage string
 	statusTimeout time.Time
 	projectName   string
@@ -51,11 +53,19 @@ type TaskModel struct {
 	activeTab    string           // currently active tab name
 	tabTasks     map[string][]taskmeta.Task // tasks grouped by tab
 	sortMode     string           // "file" or "alpha"
+
+	// Modal state for tasks that require variables
+	modalMode      bool
+	modalInputs    []textinput.Model
+	modalVariables []struct {
+		Name         string
+		DefaultValue string
+	}
+	modalFocused int
+	modalError   error
 }
 
-
 type tickMsg time.Time
-
 
 // refreshMsg is sent when task refresh is complete
 type refreshMsg struct {
@@ -89,6 +99,7 @@ func NewTaskModel(tasks []taskmeta.Task, themeName string, mouseEnabled bool, pr
 		favorites:     make(map[string]bool),
 		tabTasks:      make(map[string][]taskmeta.Task),
 		sortMode:      "file", // default to file order
+		lastCommand:   []string{},
 	}
 	ti := textinput.New()
 	ti.Placeholder = "Type to filter tasks"
@@ -152,9 +163,45 @@ func (m *TaskModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *TaskModel) handleKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.modalMode {
+		// In modal mode, handle input fields
+		switch msg.String() {
+		case "esc":
+			m.modalMode = false
+			return m, nil
+		case "enter":
+			// Submit and run task
+			args := []string{m.filteredTasks[m.selected].Name}
+			for i, v := range m.modalVariables {
+				args = append(args, fmt.Sprintf("%s=%s", v.Name, m.modalInputs[i].Value()))
+			}
+			m.lastCommand = args
+			m.quitAfterSelect = true
+			return m, tea.Quit
+		case "tab":
+			// Switch focus
+			m.modalInputs[m.modalFocused].Blur()
+			m.modalFocused = (m.modalFocused + 1) % len(m.modalInputs)
+			m.modalInputs[m.modalFocused].Focus()
+			return m, textinput.Blink
+		case "shift+tab":
+			m.modalInputs[m.modalFocused].Blur()
+			m.modalFocused--
+			if m.modalFocused < 0 {
+				m.modalFocused = len(m.modalInputs) - 1
+			}
+			m.modalInputs[m.modalFocused].Focus()
+			return m, textinput.Blink
+		}
+
+		var cmd tea.Cmd
+		m.modalInputs[m.modalFocused], cmd = m.modalInputs[m.modalFocused].Update(msg)
+		return m, cmd
+	}
+
 	if m.searchMode {
 		// Handle navigation keys while in search mode so arrow keys still move
-		// the selection. If it's not a navigation key, pass it to the text
+		// the selection. If it\'s not a navigation key, pass it to the text
 		// input component for normal editing.
 		switch msg.String() {
 		case "up", "k":
@@ -214,7 +261,7 @@ func (m *TaskModel) handleKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// This enables "type-to-search" UX.
 	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
 		r := msg.Runes[0]
-		// Reserved single-letter keys we don't want to hijack for search.
+		// Reserved single-letter keys we don\'t want to hijack for search.
 		// q: quit, j/k: navigation, r: refresh.
 		if r != 'q' && r != 'j' && r != 'k' && r != 'r' && unicode.IsPrint(r) && !unicode.IsSpace(r) {
 			m.searchMode = true
@@ -341,7 +388,43 @@ func (m *TaskModel) markForExecution() tea.Cmd {
 		return nil
 	}
 	task := m.filteredTasks[m.selected]
-	m.lastCommand = task.Name
+
+	// Check for variables in description
+	re := regexp.MustCompile(`(\w+)="([^"]+)"`) // Corrected: escaped quotes within regex string
+	usageRe := regexp.MustCompile(`Usage: task [^ ]+ -- (.*)`) // Corrected: escaped quotes within regex string
+	usageMatch := usageRe.FindStringSubmatch(task.Desc)
+
+	if len(usageMatch) > 1 {
+		// Variables are required, enter modal mode
+		m.modalMode = true
+		m.modalFocused = 0
+		m.modalError = nil
+		m.modalVariables = nil
+		m.modalInputs = nil
+
+		matches := re.FindAllStringSubmatch(usageMatch[1], -1)
+		for _, match := range matches {
+			m.modalVariables = append(m.modalVariables, struct {
+				Name         string
+				DefaultValue string
+			}{Name: match[1], DefaultValue: match[2]})
+
+			ti := textinput.New()
+			ti.SetValue(match[2])
+			ti.CharLimit = 256
+			ti.Width = 50 // Adjusted for new fancy box
+			m.modalInputs = append(m.modalInputs, ti)
+		}
+
+		if len(m.modalInputs) > 0 {
+			m.modalInputs[0].Focus()
+		}
+
+		return textinput.Blink // Don\'t quit, stay in modal and blink cursor
+	}
+
+	// No variables, run task directly
+	m.lastCommand = []string{task.Name}
 	m.quitAfterSelect = true
 	return tea.Quit
 }
@@ -375,13 +458,13 @@ func (m *TaskModel) toggleSortMode() {
 }
 
 // Accessors used by main program after TUI exits.
-func (m TaskModel) ShouldRun() bool   { return m.quitAfterSelect && m.lastCommand != "" }
-func (m TaskModel) TaskToRun() string { return m.lastCommand }
+func (m TaskModel) ShouldRun() bool   { return m.quitAfterSelect && len(m.lastCommand) > 0 }
+func (m TaskModel) TaskToRun() []string { return m.lastCommand }
 
 // (Removed legacy grouping functions & types)
 
 func (m *TaskModel) updateFilter() {
-	// If there's a search query, run the search across all tasks (global
+	// If there\'s a search query, run the search across all tasks (global
 	// search), otherwise show tasks for the currently active tab.
 	var baseTasks []taskmeta.Task
 	if m.searchQuery != "" {
@@ -484,8 +567,6 @@ func (m *TaskModel) buildTabs() {
 	}
 }
 
-
-
 func (m *TaskModel) moveToNextTab() {
 	if len(m.tabs) <= 1 {
 		return
@@ -503,7 +584,7 @@ func (m *TaskModel) moveToNextTab() {
 	}
 
 	if currentIndex >= 0 {
-		// Move to next tab only if we're not already at the last tab. Do not wrap-around.
+		// Move to next tab only if we\'re not already at the last tab. Do not wrap-around.
 		if currentIndex < len(m.tabs)-1 {
 			nextIndex := currentIndex + 1
 			m.activeTab = m.tabs[nextIndex]
@@ -534,7 +615,7 @@ func (m *TaskModel) moveToPrevTab() {
 	}
 
 	if currentIndex >= 0 {
-		// Move to previous tab only if we're not already at the first tab. Do not wrap-around.
+		// Move to previous tab only if we\'re not already at the first tab. Do not wrap-around.
 		if currentIndex > 0 {
 			prevIndex := currentIndex - 1
 			m.activeTab = m.tabs[prevIndex]
@@ -589,7 +670,7 @@ func (m *TaskModel) ensureTabVisible(tabIndex int) {
 	// Adjust offset to make sure the target tab is visible
 	if tabIndex < m.tabOffset {
 		m.tabOffset = tabIndex
-	} else if tabIndex >= m.tabOffset + visibleCount {
+	} else if tabIndex >= m.tabOffset+visibleCount {
 		m.tabOffset = tabIndex - visibleCount + 1
 	}
 
@@ -612,7 +693,7 @@ func (m *TaskModel) getTabIndexAtX(x int) int {
 	}
 
 	// Simple approximation - each tab takes about 10-15 characters
-	// This is a rough estimate, for precise clicking we'd need to track exact positions
+	// This is a rough estimate, for precise clicking we\'d need to track exact positions
 	// Start after border padding plus header indent so clicks map when tabs are indented under the title/logo.
 	pos := 2 + m.headerIndent
 	for i := m.tabOffset; i < len(m.tabs); i++ {
@@ -721,88 +802,49 @@ func (m *TaskModel) ensureSelectionVisible() {
 	}
 }
 
-func (m TaskModel) View() string { return m.renderList() }
+func (m TaskModel) View() string {
+	mainView := m.renderList()
 
-func (m TaskModel) renderTabs(width int) string {
-	if len(m.tabs) <= 1 {
-		return ""
-	}
+	if m.modalMode {
+		var modalContent strings.Builder
+		modalContent.WriteString("Enter Task Variable:\n")
 
-	// tabParts removed; we build renderedTabs and then truncate/join below
-
-	// We'll build the tab pieces (without arrows), then ensure the final
-	// output fits on a single line by truncating the tab content if needed.
-	// Reserve a small amount of space for left/right arrows when present so
-	// the arrows are always visible and tabs never wrap to multiple lines.
-
-	// Calculate available width for tabs and reserve for borders/padding
-	availableWidth := width - 11 // small margin for arrows/borders
-	if availableWidth < 20 {
-		availableWidth = 20
-	}
-
-	// Render tab parts (no arrows yet)
-	var renderedTabs []string
-	for i := m.tabOffset; i < len(m.tabs); i++ {
-		tab := m.tabs[i]
-		tabName := tab
-		if tab == "main" {
-			tabName = "Main"
-		} else {
-			tabName = m.titleCase(tab)
+		fancyBorder := lipgloss.Border{
+			Top:         "─",
+			Bottom:      "─",
+			Left:        "│",
+			Right:       "│",
+			TopLeft:     "┌",
+			TopRight:    "┐",
+			BottomLeft:  "└",
+			BottomRight: "┘",
 		}
 
-		if tab == m.activeTab {
-			// Add vertical bar highlight for active tab
-			highlightBar := m.theme.Highlight.Render("▎")
-			tabContent := highlightBar + " " + tabName
-			renderedTabs = append(renderedTabs, m.theme.TabActive.Render(tabContent))
-		} else {
-			// Add spaces to align with active tab (bar + space == 2 chars)
-			tabContent := "  " + tabName
-			renderedTabs = append(renderedTabs, m.theme.TabInactive.Render(tabContent))
+		var inputsView strings.Builder
+		for i := range m.modalInputs {
+			m.modalInputs[i].Prompt = "▪ "
+			m.modalInputs[i].PromptStyle = m.theme.Highlight
+			inputsView.WriteString(m.modalInputs[i].View() + "\n")
 		}
+
+		        inputBox := lipgloss.NewStyle().
+		            Border(fancyBorder, true).
+		            BorderForeground(m.theme.HighlightColor).
+		            Padding(0, 1).
+		            Render(inputsView.String())
+		modalContent.WriteString(inputBox)
+
+		dialogBox := lipgloss.NewStyle().Padding(1).Render(modalContent.String())
+
+		return lipgloss.Place(m.width, m.height,
+			lipgloss.Center, lipgloss.Center,
+			dialogBox,
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceForeground(lipgloss.Color("236")),
+		)
 	}
 
-	// Join without arrows to measure width
-	tabsContent := strings.Join(renderedTabs, "")
-
-	// Determine whether arrows will be needed
-	leftArrow := ""
-	rightArrow := ""
-	if m.tabOffset > 0 {
-		leftArrow = m.theme.TabArrow.Render("◀")
-	}
-	// A simple heuristic: if there are tabs beyond the last we attempted to render
-	// then show the right arrow. We can approximate this by checking if the raw
-	// rendered width exceeds the available space.
-	// Reserve space for arrows when truncating so they remain visible.
-	reservedForArrows := 0
-	if leftArrow != "" {
-		reservedForArrows += lipgloss.Width(leftArrow)
-	}
-
-	// If raw content would overflow availableWidth, we'll reserve space for a right arrow
-	if lipgloss.Width(tabsContent)+reservedForArrows > availableWidth {
-		rightArrow = m.theme.TabArrow.Render("▶")
-		reservedForArrows += lipgloss.Width(rightArrow)
-	}
-
-	// Compute content width available for tab text (avoid negative)
-	contentWidth := availableWidth - reservedForArrows
-	if contentWidth < 1 {
-		contentWidth = 1
-	}
-
-	// Truncate the joined tabs content to fit into the single-line area.
-	// This prevents wrapping. We keep the left/right arrows outside the
-	// truncated content so they're always visible.
-	truncated := truncateStringToWidth(tabsContent, contentWidth)
-
-	// Compose final tab line with arrows and truncated content
-	finalTabs := leftArrow + truncated + rightArrow
-
-	return m.theme.TabsContainer.Copy().Width(width).Render(finalTabs)
+	return mainView
 }
 
 func (m TaskModel) renderList() string {
@@ -823,9 +865,11 @@ func (m TaskModel) renderList() string {
 
 	// Refactored header: title on the left, logo on the far right (two lines).
 	proj := m.projectName
-	if proj == "" { proj = "(no Taskfile)" }
+	if proj == "" {
+		proj = "(no Taskfile)"
+	}
 	appTitle := "Task Runner Gui - taskg" // could append proj if desired
-	secondLine := "" // reserved for future help/hints
+	secondLine := ""                      // reserved for future help/hints
 
 	// Logo (2-line block glyph) now rendered at the right edge
 	logoLines := []string{"░▀░▀░  ", "░▄░▄░"}
@@ -833,7 +877,9 @@ func (m TaskModel) renderList() string {
 	logoWidth := 0
 	for i, l := range logoLines {
 		logoStyledLines[i] = m.theme.Logo.Copy().Render(l)
-		if w := lipgloss.Width(l); w > logoWidth { logoWidth = w }
+		if w := lipgloss.Width(l); w > logoWidth {
+			logoWidth = w
+		}
 	}
 
 	// Render title/help left; compute padding so logo aligns right.
@@ -844,9 +890,13 @@ func (m TaskModel) renderList() string {
 	secondRendered := m.theme.Help.Render(secondLine)
 
 	space1 := innerWidth - lipgloss.Width(titleRendered) - logoWidth
-	if space1 < 1 { space1 = 1 }
+	if space1 < 1 {
+		space1 = 1
+	}
 	space2 := innerWidth - lipgloss.Width(secondRendered) - logoWidth
-	if space2 < 1 { space2 = 1 }
+	if space2 < 1 {
+		space2 = 1
+	}
 
 	firstLine := titleRendered + strings.Repeat(" ", space1) + logoStyledLines[0]
 	secondLineOut := secondRendered + strings.Repeat(" ", space2) + logoStyledLines[1]
@@ -859,7 +909,9 @@ func (m TaskModel) renderList() string {
 		// Header indent no longer needed (logo on right); keep 0 so first tab aligns with title start.
 		m.headerIndent = 0
 		content.WriteString(m.renderTabs(innerWidth) + "\n")
-	} else { m.headerIndent = 0 }
+	} else {
+		m.headerIndent = 0
+	}
 
 	// Search
 	if m.searchMode {
@@ -950,7 +1002,9 @@ func (m TaskModel) renderList() string {
 		}
 
 		style := m.theme.CommandBox
-		if i == m.selected { style = m.theme.SelectedWire }
+		if i == m.selected {
+			style = m.theme.SelectedWire
+		}
 		box := style.Copy()
 		content.WriteString(box.Width(innerWidth).Render(fullContent) + "\n")
 	}
@@ -969,34 +1023,37 @@ func (m TaskModel) renderList() string {
 	content.WriteString(status.Width(innerWidth).Render(statusText) + "\n")
 
 	// Build footer parts with consistent layout
-	parts := []string{}
-
-	// Add page counter first
-	if len(m.filteredTasks) > 0 {
-		maxItems := len(m.filteredTasks)
-		current := m.selected + 1
-		maxWidth := len(fmt.Sprintf("%d/%d", maxItems, maxItems))
-		pageStr := fmt.Sprintf("%*s", maxWidth, fmt.Sprintf("%d/%d", current, maxItems))
-		parts = append(parts, m.theme.Highlight.Render(pageStr))
-	}
-
-	parts = append(parts, "↑↓ move")
-	if len(m.tabs) > 1 {
-		parts = append(parts, "←→/Tab switch")
-	}
-	parts = append(parts, m.theme.Highlight.Render("Enter run"))
-	parts = append(parts, "/ search")
-	parts = append(parts, "r/^R refresh")
-
-	var sortIndicator string
-	if m.sortMode == "alpha" {
-		sortIndicator = "Sort: A→Z (^S)"
+	var parts []string
+	if m.modalMode {
+		parts = []string{"enter: confirm", "esc: cancel", "tab: next field"}
 	} else {
-		sortIndicator = "Sort: Original (^S)"
-	}
-	parts = append(parts, sortIndicator)
+		// Add page counter first
+		if len(m.filteredTasks) > 0 {
+			maxItems := len(m.filteredTasks)
+			current := m.selected + 1
+			maxWidth := len(fmt.Sprintf("%d/%d", maxItems, maxItems))
+			pageStr := fmt.Sprintf("%*s", maxWidth, fmt.Sprintf("%d/%d", current, maxItems))
+			parts = append(parts, m.theme.Highlight.Render(pageStr))
+		}
 
-	parts = append(parts, "q quit")
+		parts = append(parts, "↑↓ move")
+		if len(m.tabs) > 1 {
+			parts = append(parts, "←→/Tab switch")
+		}
+		parts = append(parts, m.theme.Highlight.Render("Enter run"))
+		parts = append(parts, "/ search")
+		parts = append(parts, "r/^R refresh")
+
+		var sortIndicator string
+		if m.sortMode == "alpha" {
+			sortIndicator = "Sort: A→Z (^S)"
+		} else {
+			sortIndicator = "Sort: Original (^S)"
+		}
+		parts = append(parts, sortIndicator)
+
+		parts = append(parts, "q quit")
+	}
 
 	// Flexible footer layout that wraps
 	separator := "  │  "
@@ -1057,6 +1114,88 @@ func (m TaskModel) renderList() string {
 	return finalRender
 }
 
+func (m TaskModel) renderTabs(width int) string {
+	if len(m.tabs) <= 1 {
+		return ""
+	}
+
+	// tabParts removed; we build renderedTabs and then truncate/join below
+
+	// We\'ll build the tab pieces (without arrows), then ensure the final
+	// output fits on a single line by truncating the tab content if needed.
+	// Reserve a small amount of space for left/right arrows when present so
+	// the arrows are always visible and tabs never wrap to multiple lines.
+
+	// Calculate available width for tabs and reserve for borders/padding
+	availableWidth := width - 11 // small margin for arrows/borders
+	if availableWidth < 20 {
+		availableWidth = 20
+	}
+
+	// Render tab parts (no arrows yet)
+	var renderedTabs []string
+	for i := m.tabOffset; i < len(m.tabs); i++ {
+		tab := m.tabs[i]
+		tabName := tab
+		if tab == "main" {
+			tabName = "Main"
+		} else {
+			tabName = m.titleCase(tab)
+		}
+
+		if tab == m.activeTab {
+			// Add vertical bar highlight for active tab
+			highlightBar := m.theme.Highlight.Render("▎")
+			tabContent := highlightBar + " " + tabName
+			renderedTabs = append(renderedTabs, m.theme.TabActive.Render(tabContent))
+		} else {
+			// Add spaces to align with active tab (bar + space == 2 chars)
+			tabContent := "  " + tabName
+			renderedTabs = append(renderedTabs, m.theme.TabInactive.Render(tabContent))
+		}
+	}
+
+	// Join without arrows to measure width
+	tabsContent := strings.Join(renderedTabs, "")
+
+	// Determine whether arrows will be needed
+	leftArrow := ""
+	rightArrow := ""
+	if m.tabOffset > 0 {
+		leftArrow = m.theme.TabArrow.Render("◀")
+	}
+	// A simple heuristic: if there are tabs beyond the last we attempted to render
+	// then show the right arrow. We can approximate this by checking if the raw
+	// rendered width exceeds the available space.
+	// Reserve space for arrows when truncating so they remain visible.
+	reservedForArrows := 0
+	if leftArrow != "" {
+		reservedForArrows += lipgloss.Width(leftArrow)
+	}
+
+	// If raw content would overflow availableWidth, we\'ll reserve space for a right arrow
+	if lipgloss.Width(tabsContent)+reservedForArrows > availableWidth {
+		rightArrow = m.theme.TabArrow.Render("▶")
+		reservedForArrows += lipgloss.Width(rightArrow)
+	}
+
+	// Compute content width available for tab text (avoid negative)
+	contentWidth := availableWidth - reservedForArrows
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+
+	// Truncate the joined tabs content to fit into the single-line area.
+	// This prevents wrapping. We keep the left/right arrows outside the
+	// truncated content so they\'re always visible.
+	truncated := truncateStringToWidth(tabsContent, contentWidth)
+
+	// Compose final tab line with arrows and truncated content
+	finalTabs := leftArrow + truncated + rightArrow
+
+	return m.theme.TabsContainer.Copy().Width(width).Render(finalTabs)
+}
+
 func max(a, b int) int {
 	if a > b {
 		return a
@@ -1100,7 +1239,7 @@ func truncateStringToWidth(s string, maxW int) string {
 		}
 	}
 	res := b.String()
-	// If we're still too long, trim last rune(s)
+	// If we\'re still too long, trim last rune(s)
 	for lipgloss.Width(res) > maxW-1 {
 		res = string([]rune(res)[:len([]rune(res))-1])
 	}

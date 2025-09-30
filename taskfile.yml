@@ -65,124 +65,54 @@ tasks:
             - pwd
 
     dir-make:
-        desc: Create a directory (asks for name)
-        vars:
-            dir:
-                sh: |
-                    read -p "Enter directory name (default: test-dir): " d
-                    echo ${d:-test-dir}
+        desc: 'Create a directory. Usage: task dir-make -- DIR="test-dir"'
         cmds:
-            - mkdir -p {{.dir}}
+            - mkdir -p '{{.DIR | default "test-dir"}}'
 
     dir-remove:
-        desc: Remove a directory (asks for name)
-        vars:
-            dir:
-                sh: |
-                    read -p "Enter directory to remove (default: test-dir): " d
-                    echo ${d:-test-dir}
+        desc: 'Remove a directory. Usage: task dir-remove -- DIR="test-dir"'
         cmds:
-            - rmdir "{{.dir}}" || true
+            - rmdir '{{.DIR | default "test-dir"}}' || true
 
     file-copy:
-        desc: Copy a file (asks for src and dest)
-        vars:
-            src:
-                sh: |
-                    read -p "Enter source file (default: /etc/hosts): " s
-                    echo ${s:-/etc/hosts}
-            dest:
-                sh: |
-                    read -p "Enter destination file (default: hosts.copy): " d
-                    echo ${d:-hosts.copy}
+        desc: 'Copy a file. Usage: task file-copy -- SRC="/etc/hosts" DEST="hosts.copy"'
         cmds:
-            - cp "{{.src}}" "{{.dest}}"
+            - cp '{{.SRC | default "/etc/hosts"}}' '{{.DEST | default "hosts.copy"}}'
 
     file-move:
-        desc: Move/rename a file (asks for src and dest)
-        vars:
-            src:
-                sh: |
-                    read -p "Enter source file (default: hosts.copy): " s
-                    echo ${s:-hosts.copy}
-            dest:
-                sh: |
-                    read -p "Enter destination file (default: hosts.backup): " d
-                    echo ${d:-hosts.backup}
+        desc: 'Move/rename a file. Usage: task file-move -- SRC="hosts.copy" DEST="hosts.backup"'
         cmds:
-            - mv "{{.src}}" "{{.dest}}" || true
+            - mv '{{.SRC | default "hosts.copy"}}' '{{.DEST | default "hosts.backup"}}' || true
 
     file-remove:
-        desc: Remove a file (asks for path)
-        vars:
-            file:
-                sh: |
-                    read -p "Enter file to remove (default: hosts.backup): " f
-                    echo ${f:-hosts.backup}
+        desc: 'Remove a file. Usage: task file-remove -- FILE="hosts.backup"'
         cmds:
-            - rm -f "{{.file}}"
+            - rm -f '{{.FILE | default "hosts.backup"}}'
 
     file-cat:
-        desc: Display contents of a file
-        vars:
-            file:
-                sh: |
-                    read -p "Enter file to display (default: /etc/hostname): " f
-                    echo ${f:-/etc/hostname}
+        desc: 'Display contents of a file. Usage: task file-cat -- FILE="/etc/hostname"'
         cmds:
-            - cat "{{.file}}"
+            - cat '{{.FILE | default "/etc/hostname"}}'
 
     file-head:
-        desc: Display first N lines of a file
-        vars:
-            file:
-                sh: |
-                    read -p "Enter file (default: /etc/passwd): " f
-                    echo ${f:-/etc/passwd}
-            lines:
-                sh: |
-                    read -p "Enter number of lines (default: 5): " n
-                    echo ${n:-5}
+        desc: 'Display first N lines of a file. Usage: task file-head -- FILE="/etc/passwd" LINES=5'
         cmds:
-            - head -n {{.lines}} "{{.file}}"
+            - head -n '{{.LINES | default 5}}' '{{.FILE | default "/etc/passwd"}}'
 
     file-tail:
-        desc: Display last N lines of a file
-        vars:
-            file:
-                sh: |
-                    read -p "Enter file (default: /etc/passwd): " f
-                    echo ${f:-/etc/passwd}
-            lines:
-                sh: |
-                    read -p "Enter number of lines (default: 5): " n
-                    echo ${n:-5}
+        desc: 'Display last N lines of a file. Usage: task file-tail -- FILE="/etc/passwd" LINES=5'
         cmds:
-            - tail -n {{.lines}} "{{.file}}"
+            - tail -n '{{.LINES | default 5}}' '{{.FILE | default "/etc/passwd"}}'
 
     file-search:
-        desc: Search for a term in a file
-        vars:
-            term:
-                sh: |
-                    read -p "Enter search term (default: root): " t
-                    echo ${t:-root}
-            file:
-                sh: |
-                    read -p "Enter file to search (default: /etc/passwd): " f
-                    echo ${f:-/etc/passwd}
+        desc: 'Search for a term in a file. Usage: task file-search -- TERM="root" FILE="/etc/passwd"'
         cmds:
-            - grep "{{.term}}" "{{.file}}"
+            - grep '{{.TERM | default "root"}}' '{{.FILE | default "/etc/passwd"}}'
 
     file-count-lines:
-        desc: Count lines in a file
-        vars:
-            file:
-                sh: |
-                    read -p "Enter file to count lines (default: /etc/passwd): " f
-                    echo ${f:-/etc/passwd}
+        desc: 'Count lines in a file. Usage: task file-count-lines -- FILE="/etc/passwd"'
         cmds:
-            - wc -l "{{.file}}"
+            - wc -l '{{.FILE | default "/etc/passwd"}}'
 
     sys-processes:
         desc: List running processes
@@ -215,24 +145,14 @@ tasks:
             - lspci || true
 
     net-dns:
-        desc: Resolve a hostname
-        vars:
-            host:
-                sh: |
-                    read -p "Enter hostname to resolve (default: google.com): " h
-                    echo ${h:-google.com}
+        desc: 'Resolve a hostname. Usage: task net-dns -- HOST="google.com"'
         cmds:
-            - dig "{{.host}}" || nslookup "{{.host}}"
+            - dig '{{.HOST | default "google.com"}}' || nslookup '{{.HOST | default "google.com"}}'
 
     net-ping:
-        desc: Ping a host
-        vars:
-            host:
-                sh: |
-                    read -p "Enter hostname to ping (default: google.com): " h
-                    echo ${h:-google.com}
+        desc: 'Ping a host. Usage: task net-ping -- HOST="google.com"'
         cmds:
-            - ping -c 4 "{{.host}}"
+            - ping -c 4 '{{.HOST | default "google.com"}}'
 
     apt-update:
         desc: Update package lists (Debian/Ubuntu)
@@ -243,6 +163,11 @@ tasks:
         desc: Upgrade installed packages (Debian/Ubuntu)
         cmds:
             - sudo apt upgrade -y
+
+    ask:
+        desc: 'Asks for a variable and prints it. Usage: task ask -- NAME="World"'
+        cmds:
+            - echo 'Hello, {{.NAME}}! {{.LASTNAME}}!'
 
     art:
         desc: Print some ASCII art
