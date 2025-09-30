@@ -8,6 +8,12 @@ _Terminal task explorer with vibes._
 
 </div>
 
+> ⚠️ **Not affiliated with the Task project**
+>
+> This repository is an independent wrapper UI for the Task project (https://taskfile.dev/).
+> It is not affiliated with, endorsed by, or maintained by the original Task project maintainers.
+
+
 Task Runner GUI (taskg) is a minimal **terminal UI** wrapper around the excellent **Task** project: https://taskfile.dev/
 It discovers tasks (including those from includes/extends), lets you filter instantly, and then runs the selected task after the UI exits. Zero streaming pane, zero fluff.
 
