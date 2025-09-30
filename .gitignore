@@ -42,4 +42,5 @@ node_modules/
 internal/styles/*.bak
 
 .gptcache/
-taskg
+/taskg
+.gocache/
