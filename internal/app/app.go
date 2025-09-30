@@ -49,10 +49,10 @@ type TaskModel struct {
 	// cached dynamic measurements
 	itemHeight int // includes trailing spacing newline after each item
 	// tab-related state
-	tabs         []string          // list of tab names (prefixes + "main")
-	activeTab    string           // currently active tab name
-	tabTasks     map[string][]taskmeta.Task // tasks grouped by tab
-	sortMode     string           // "file" or "alpha"
+	tabs      []string                   // list of tab names (prefixes + "main")
+	activeTab string                     // currently active tab name
+	tabTasks  map[string][]taskmeta.Task // tasks grouped by tab
+	sortMode  string                     // "file" or "alpha"
 
 	// Modal state for tasks that require variables
 	modalMode      bool
@@ -107,7 +107,7 @@ func NewTaskModel(tasks []taskmeta.Task, themeName string, mouseEnabled bool, pr
 	ti.Width = 40
 	ti.Prompt = "🔍 "
 	m.searchInput = ti
-	m.buildTabs()  // Build tabs from tasks
+	m.buildTabs()    // Build tabs from tasks
 	m.updateFilter() // Apply initial filter
 	return m
 }
@@ -153,7 +153,7 @@ func (m *TaskModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus(fmt.Sprintf("Refresh failed: %v", msg.err))
 		} else {
 			m.tasks = msg.tasks
-			m.buildTabs()  // Rebuild tabs after refresh
+			m.buildTabs() // Rebuild tabs after refresh
 			m.updateFilter()
 			m.setStatus(fmt.Sprintf("Refreshed - %d tasks found", len(msg.tasks)))
 		}
@@ -390,7 +390,7 @@ func (m *TaskModel) markForExecution() tea.Cmd {
 	task := m.filteredTasks[m.selected]
 
 	// Check for variables in description
-	re := regexp.MustCompile(`(\w+)="([^"]+)"`) // Corrected: escaped quotes within regex string
+	re := regexp.MustCompile(`(\w+)="([^"]+)"`)                // Corrected: escaped quotes within regex string
 	usageRe := regexp.MustCompile(`Usage: task [^ ]+ -- (.*)`) // Corrected: escaped quotes within regex string
 	usageMatch := usageRe.FindStringSubmatch(task.Desc)
 
@@ -458,7 +458,7 @@ func (m *TaskModel) toggleSortMode() {
 }
 
 // Accessors used by main program after TUI exits.
-func (m TaskModel) ShouldRun() bool   { return m.quitAfterSelect && len(m.lastCommand) > 0 }
+func (m TaskModel) ShouldRun() bool     { return m.quitAfterSelect && len(m.lastCommand) > 0 }
 func (m TaskModel) TaskToRun() []string { return m.lastCommand }
 
 // (Removed legacy grouping functions & types)
@@ -656,7 +656,7 @@ func (m *TaskModel) ensureTabVisible(tabIndex int) {
 
 		// Account for highlight bar and space (2 chars) + padding + margins
 		tabWidth := len(tabName) + 8 // highlight bar + space + padding + margins
-		if currentWidth + tabWidth > availableWidth {
+		if currentWidth+tabWidth > availableWidth {
 			break
 		}
 		currentWidth += tabWidth
@@ -806,9 +806,6 @@ func (m TaskModel) View() string {
 	mainView := m.renderList()
 
 	if m.modalMode {
-		var modalContent strings.Builder
-		modalContent.WriteString("Enter Task Variable:\n")
-
 		fancyBorder := lipgloss.Border{
 			Top:         "─",
 			Bottom:      "─",
@@ -820,20 +817,39 @@ func (m TaskModel) View() string {
 			BottomRight: "┘",
 		}
 
+		sections := []string{}
+		header := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(m.theme.HighlightColor).
+			Render("Enter Task Variables")
+		sections = append(sections, header)
+
 		for i := range m.modalInputs {
 			m.modalInputs[i].Prompt = "▪ "
 			m.modalInputs[i].PromptStyle = m.theme.Highlight
-			
+
 			inputBox := lipgloss.NewStyle().
 				Border(fancyBorder, true).
 				BorderForeground(m.theme.HighlightColor).
 				Padding(0, 1).
 				Render(m.modalInputs[i].View())
 
-			modalContent.WriteString(inputBox + "\n")
+			sections = append(sections, inputBox)
 		}
 
-		dialogBox := lipgloss.NewStyle().Padding(1).Render(modalContent.String())
+		tabKey := m.theme.Highlight.Copy().Render("TAB")
+		enterKey := m.theme.Highlight.Copy().Render("ENTER")
+		helperText := fmt.Sprintf("%s to change field, %s to run", tabKey, enterKey)
+		helper := m.theme.Help.Copy().Italic(true).Render(helperText)
+		sections = append(sections, helper)
+
+		modalContent := lipgloss.JoinVertical(lipgloss.Left, sections...)
+
+		dialogBox := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(m.theme.HighlightColor).
+			Padding(1, 2).
+			Render(modalContent)
 
 		return lipgloss.Place(m.width, m.height,
 			lipgloss.Center, lipgloss.Center,
