@@ -171,6 +171,7 @@ tasks:
 
     art:
         desc: Print some ASCII art
+        silent: true
         cmds:
             - |
                 echo "   _____         _      "
