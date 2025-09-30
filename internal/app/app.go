@@ -820,19 +820,18 @@ func (m TaskModel) View() string {
 			BottomRight: "┘",
 		}
 
-		var inputsView strings.Builder
 		for i := range m.modalInputs {
 			m.modalInputs[i].Prompt = "▪ "
 			m.modalInputs[i].PromptStyle = m.theme.Highlight
-			inputsView.WriteString(m.modalInputs[i].View() + "\n")
-		}
+			
+			inputBox := lipgloss.NewStyle().
+				Border(fancyBorder, true).
+				BorderForeground(m.theme.HighlightColor).
+				Padding(0, 1).
+				Render(m.modalInputs[i].View())
 
-		        inputBox := lipgloss.NewStyle().
-		            Border(fancyBorder, true).
-		            BorderForeground(m.theme.HighlightColor).
-		            Padding(0, 1).
-		            Render(inputsView.String())
-		modalContent.WriteString(inputBox)
+			modalContent.WriteString(inputBox + "\n")
+		}
 
 		dialogBox := lipgloss.NewStyle().Padding(1).Render(modalContent.String())
 

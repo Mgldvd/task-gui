@@ -165,9 +165,9 @@ tasks:
             - sudo apt upgrade -y
 
     ask:
-        desc: 'Asks for a variable and prints it. Usage: task ask -- NAME="World"'
+        desc: 'Asks for variables and prints them. Usage: task ask -- NAME="John" LASTNAME="Doe"'
         cmds:
-            - echo 'Hello, {{.NAME}}! {{.LASTNAME}}!'
+            - echo 'Hello, {{.NAME}} {{.LASTNAME}}!'
 
     art:
         desc: Print some ASCII art
@@ -183,6 +183,7 @@ tasks:
 
     about:
         desc: Info about Task GUI
+        silent: true
         cmds:
             - |
                 echo "Task GUI - A simple frontend for Taskfile.dev"
