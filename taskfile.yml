@@ -6,12 +6,12 @@ tasks:
         desc: Test task that prints a message
         cmds:
             - echo "✓ Task execution successful!"
-            - echo "This task was selected in the GUI and executed automatically"
+            - echo "This task was selected in the TUI and executed automatically"
 
     util-echo:
         desc: Another simple test
         cmds:
-            - echo "Test command executed from GUI"
+            - echo "Test command executed from TUI"
             - date
 
     util-list-files:
@@ -183,10 +183,10 @@ tasks:
                 echo "ASCII ART DEMO!"
 
     about:
-        desc: Info about Task GUI
+        desc: Info about Task TUI
         silent: true
         cmds:
             - |
-                echo "Task GUI - A simple frontend for Taskfile.dev"
+                echo "Task TUI - A simple frontend for Taskfile.dev"
                 echo "Repository: https://github.com/Mgldvd/task-gui"
                 echo "Version: Experimental"

@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="img/logo.png" alt="Task Runner GUI" width="240" />
+<img src="img/logo.png" alt="Task Runner TUI" width="240" />
 
-# Task Runner GUI (taskg)
+# Task Runner TUI (taskg)
 
 _Terminal task explorer with vibes._
 
@@ -14,7 +14,7 @@ _Terminal task explorer with vibes._
 > It is not affiliated with, endorsed by, or maintained by the original Task project maintainers.
 
 
-Task Runner GUI (taskg) is a minimal **terminal UI** wrapper around the excellent **Task** project: https://taskfile.dev/
+Task Runner TUI (taskg) is a minimal **terminal UI** wrapper around the excellent **Task** project: https://taskfile.dev/
 It discovers tasks (including those from includes/extends), lets you filter instantly, and then runs the selected task after the UI exits. Zero streaming pane, zero fluff.
 
 <div align="center">

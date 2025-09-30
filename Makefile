@@ -1,4 +1,4 @@
-# Makefile for Task Runner GUI
+# Makefile for Task Runner TUI
 
 # Variables
 BINARY_NAME=taskg

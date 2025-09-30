@@ -23,8 +23,8 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "taskg",
-	Short: "Task Runner GUI: browse and run Taskfile tasks (companion UI for go-task)",
-	Long: `Task Runner GUI is a terminal user interface that discovers tasks from Taskfiles (including includes/extends)
+	Short: "Task Runner TUI: browse and run Taskfile tasks (companion UI for go-task)",
+	Long: `Task Runner TUI is a terminal user interface that discovers tasks from Taskfiles (including includes/extends)
 and lets you search, inspect, and run them. It requires the 'task' binary to be installed and on PATH.`,
 	Version: version.Version,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -96,7 +96,7 @@ and lets you search, inspect, and run them. It requires the 'task' binary to be 
 				c.Stdin = os.Stdin
 				if err := c.Run(); err != nil {
 					// The task exiting with a non-zero status is not necessarily an
-					// error in the GUI runner, so just log it.
+					// error in the TUI runner, so just log it.
 					fmt.Fprintf(os.Stderr, "Task exited: %v\n", err)
 				}
 			}
